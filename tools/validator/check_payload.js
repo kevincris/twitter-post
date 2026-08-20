@@ -99,6 +99,18 @@ function main() {
     if (!e.event) bad(`calendar[${i}].event missing`);
     if (!ISO.test(e.time_utc || '')) bad(`calendar[${i}].time_utc "${e.time_utc}" is not ISO 8601 Z-suffixed`);
     if (![1, 2, 3].includes(e.tier)) warn(`calendar[${i}].tier is ${e.tier}; tier 1 is what pre_event will key off`);
+
+    /* Scheduled releases land on the clock. A time carrying seconds, or a
+     * minute off the quarter-hour, is the signature of a producer bug —
+     * most often a botched local-to-UTC conversion, which is precisely the
+     * WIB/UTC hazard the spec is built to avoid. It would pass every other
+     * rule and put a wrong release time on a card. */
+    const m = /T(\d{2}):(\d{2}):(\d{2})Z$/.exec(e.time_utc || '');
+    if (m) {
+      const [, hh, mm, ss] = m;
+      if (ss !== '00') bad(`calendar[${i}].time_utc has non-zero seconds (${hh}:${mm}:${ss}) — scheduled releases do not; check the producer's clock handling`);
+      else if (!['00', '15', '30', '45'].includes(mm)) warn(`calendar[${i}].time_utc is ${hh}:${mm}Z, off the quarter-hour — verify this is really the release time and not a timezone conversion artifact`);
+    }
   });
 
   /* prior_posts — the state store */

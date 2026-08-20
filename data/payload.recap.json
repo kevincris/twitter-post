@@ -1,6 +1,6 @@
 {
   "slot": "recap",
-  "now_utc": "2026-08-20T15:29:47Z",
+  "now_utc": "2026-08-20T15:44:00Z",
   "instrument": "XAUUSD",
   "market_state": {
     "last": 3408.2,
@@ -31,7 +31,7 @@
     {
       "event": "US Core PCE m/m",
       "tier": 1,
-      "time_utc": "2026-08-21T04:29:47Z",
+      "time_utc": "2026-08-21T12:30:00Z",
       "consensus": 0.3,
       "prior": 0.2
     }
