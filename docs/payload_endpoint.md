@@ -109,6 +109,38 @@ outcome is a payload field:
 Without this the recap slot cannot pass rule 2 — it would have to assert an
 outcome with no field behind it, which is the one thing the architecture forbids.
 
+## Serving it from GitHub instead of an API
+
+The payload does not have to come from a service. A `payload.json` committed to
+this repo and read at its raw URL works, and the run already clones the repo
+anyway:
+
+```
+https://raw.githubusercontent.com/kevincris/twitter-post/main/payload.json
+```
+
+That removes the hosting problem entirely. It does not remove the producer
+problem — GitHub is a file host, not a data source, so something still has to
+compute `market_state` and push it. A scheduled GitHub Action that runs shortly
+before each slot is the natural fit.
+
+Two things change when the payload is a file rather than a live response:
+
+**Freshness stops being automatic.** An endpoint that breaks returns an error and
+the run skips. A committed file that stops being updated keeps serving the last
+good payload — well-formed, internally consistent, passing every validator rule,
+and describing yesterday's market. That is the worst failure this pipeline has,
+because nothing downstream can see it. `check_payload.js` therefore fails when
+`now_utc` is more than `--max-age` minutes behind real time (default 120). Set
+the Action's schedule so a fresh commit always lands before the slot fires, and
+let the staleness check be the backstop rather than the plan.
+
+**`prior_posts` has to be written back.** Scheduled runs cannot push. Whatever
+updates `payload.json` must also append to `prior_posts` after a post actually
+goes out on X — including `generated_at` and `card.layout_variant`. If that write
+never happens, rate limiting, variant rotation and similarity all silently
+degrade to "nothing has ever been posted".
+
 ## Testing before the endpoint exists
 
 The pipeline can be exercised end to end today by serving a static file. Take

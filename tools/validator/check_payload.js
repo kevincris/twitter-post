@@ -6,6 +6,13 @@
  *
  *   curl -s "$BASE/market_state?slot=morning_map" | node tools/validator/check_payload.js --slot morning_map
  *   node tools/validator/check_payload.js --slot recap -f payload.json
+ *   node tools/validator/check_payload.js --slot morning_map -f payload.json --max-age 0   # fixtures
+ *
+ * --max-age <minutes>: how far behind real time now_utc may be. Default 120.
+ * 0 disables the check (use for stored fixtures). This matters most when the
+ * payload is a committed file rather than a live endpoint: a stale payload is
+ * well-formed, passes every other rule, and publishes yesterday's numbers as
+ * today's. Staleness is the one defect the rest of the pipeline cannot see.
  */
 
 'use strict';
@@ -32,6 +39,7 @@ function main() {
   const arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
   const slot = arg('--slot');
   const file = arg('-f');
+  const maxAge = Number(arg('--max-age', '120'));
 
   const raw = file ? fs.readFileSync(file, 'utf8') : fs.readFileSync(0, 'utf8');
   let p;
@@ -44,6 +52,19 @@ function main() {
   if (p.slot !== slot) bad(`slot is "${p.slot}", expected "${slot}"`);
   if (!ISO.test(p.now_utc || '')) bad(`now_utc "${p.now_utc}" is not ISO 8601 Z-suffixed`);
   if (!p.instrument) bad('instrument missing');
+
+  /* Freshness. The dangerous failure mode for a committed payload is not a
+   * malformed one — it is a well-formed one that stopped being updated. */
+  if (maxAge > 0 && ISO.test(p.now_utc || '')) {
+    const ageMin = (Date.now() - Date.parse(p.now_utc)) / 60000;
+    if (ageMin > maxAge) {
+      bad(`now_utc is ${Math.round(ageMin)} min old (limit ${maxAge}). The producer has stopped updating; posting this would publish stale prices as current.`);
+    } else if (ageMin < -5) {
+      bad(`now_utc is ${Math.round(-ageMin)} min in the future — check the producer's clock`);
+    } else if (ageMin > maxAge / 2) {
+      warn(`now_utc is ${Math.round(ageMin)} min old, over half the ${maxAge} min limit`);
+    }
+  }
   if (!p.session || typeof p.session.holiday !== 'boolean') {
     bad('session.holiday must be a boolean — morning_map cannot decide to skip without it');
   }
