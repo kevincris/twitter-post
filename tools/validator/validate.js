@@ -44,6 +44,7 @@ const PRE_EVENT_WINDOW_MIN = 90;
 const STRUCTURAL_NUMERAL = [
   /\b\d+(?:m|h|d|min|hr|hrs)\b/gi,   // "30m move", "4h persistence"
   /\bATR\d+\b/gi,                    // "ATR20"
+  /\b\d+[-\u2011\u2013]?(?:day|period|session|bar|week|month)s?\b/gi,  // "20-day ATR", "47 sessions"
 ];
 
 const BANNED = [
@@ -79,6 +80,79 @@ const NAMED_COLORS = [
 ];
 
 /* ------------------------------ reporting -------------------------------- */
+
+
+/* ---- claim sources -------------------------------------------------------
+ * v3: a claim's provenance is a tagged source, not only a payload dot-path.
+ *   payload  — { kind:'payload',  field:'market_state.last' }
+ *   web      — { kind:'web',      url, retrieved_at, quoted_text }
+ *   computed — { kind:'computed', method, inputs:[numbers] }
+ * The legacy `source_field` string is still accepted and read as payload.
+ * The point is unchanged: every numeral must be re-checkable by machine. */
+
+const SOURCE_KINDS = ['payload', 'web', 'computed'];
+const COMPUTE = {
+  mean: (xs) => xs.reduce((a, b) => a + b, 0) / xs.length,
+  sum: (xs) => xs.reduce((a, b) => a + b, 0),
+  subtract: (xs) => xs.reduce((a, b) => a - b),
+  min: (xs) => Math.min(...xs),
+  max: (xs) => Math.max(...xs),
+};
+
+function claimSource(c) {
+  if (c && typeof c.source_field === 'string') return { kind: 'payload', field: c.source_field };
+  return (c && c.source) || null;
+}
+
+/* Does `value` actually appear in the quoted snippet? Tolerates thousands
+ * separators and trailing zeros, so 3412.4 matches "3,412.40". */
+function quoteNumbers(quote) {
+  const norm = String(quote).replace(/[,\u00A0\u202F]/g, '');
+  return (norm.match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+}
+
+/* Match on magnitude. Tweets carry direction in words ("down 0.67%"), not in
+ * the numeral, so a claim of 0.67 sourced from "-0.67%" is normal. The sign
+ * is not ignored though — signMismatch below reports it separately, because
+ * "up 0.67%" off a "-0.67%" quote is exactly the error that ends an account
+ * built on checkable numbers. */
+function valueInQuote(value, quote) {
+  if (typeof value !== 'number') return String(quote).includes(String(value));
+  return quoteNumbers(quote).some((n) => Math.abs(Math.abs(n) - Math.abs(value)) <= FLOAT_TOL);
+}
+
+function signMismatch(value, quote) {
+  if (typeof value !== 'number' || value === 0) return false;
+  const hit = quoteNumbers(quote).find((n) => Math.abs(Math.abs(n) - Math.abs(value)) <= FLOAT_TOL);
+  return hit !== undefined && hit !== 0 && Math.sign(hit) !== Math.sign(value);
+}
+
+function fetchText(url, timeoutMs = 15000) {
+  return new Promise((resolve) => {
+    let lib;
+    try { lib = url.startsWith('http://') ? require('http') : require('https'); }
+    catch { return resolve(null); }
+    const req = lib.get(url, { timeout: timeoutMs, headers: { 'user-agent': 'bearpaws-validator' } }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        return resolve(fetchText(res.headers.location, timeoutMs));
+      }
+      if (res.statusCode !== 200) { res.resume(); return resolve(null); }
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (d) => { body += d; if (body.length > 4e6) req.destroy(); });
+      res.on('end', () => resolve(body));
+    });
+    req.on('timeout', () => req.destroy());
+    req.on('error', () => resolve(null));
+  });
+}
+
+/* Strip tags and collapse whitespace so a quote lifted from rendered text
+ * still matches the raw HTML it came from. */
+const flatten = (h) => String(h).replace(/<script[\s\S]*?<\/script>/gi, ' ')
+  .replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ')
+  .replace(/&nbsp;/gi, ' ').replace(/[,\u00A0\u202F]/g, '').replace(/\s+/g, ' ').trim();
 
 const results = [];
 const rule = (n, title) => ({
@@ -193,23 +267,45 @@ const dayOf = (iso) => String(iso).slice(0, 10);
 
 /* --------------------------------- main ---------------------------------- */
 
-function main() {
+async function main() {
   const argv = process.argv.slice(2);
   const arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
   const recordPath = arg('--record');
   const payloadPath = arg('--payload');
   const repo = path.resolve(arg('--repo', '.'));
   const asJSON = argv.includes('--json');
+  const verifySources = argv.includes('--verify-sources');
 
-  if (!recordPath || !payloadPath) {
-    console.error('usage: validate.js --record <file> --payload <file> [--repo .] [--json]');
+  if (!recordPath) {
+    console.error('usage: validate.js --record <file> [--payload <file>] [--repo .] [--verify-sources] [--json]');
+    console.error('  --payload is optional in v3: a run that researches its own numbers has none.');
     process.exit(2);
   }
 
   const rec = readJSON(recordPath);
-  const payload = readJSON(payloadPath);
-  const prior = payload.prior_posts || [];
-  const nowUtc = payload.now_utc;
+  const hasPayload = Boolean(payloadPath);
+  const payload = hasPayload ? readJSON(payloadPath) : {};
+
+  /* prior_posts is the state store for rules 8, 9 and 14. It rides in the
+   * payload when there is one; otherwise reconstruct it from committed
+   * records in queue/, which is all a fresh container can see. */
+  let prior = payload.prior_posts;
+  if (!prior) {
+    prior = [];
+    const qdir = path.join(repo, 'queue');
+    if (fs.existsSync(qdir)) {
+      for (const f of fs.readdirSync(qdir).filter((x) => x.endsWith('.json')).sort()) {
+        try {
+          const q = JSON.parse(fs.readFileSync(path.join(qdir, f), 'utf8'));
+          if (q.post === true && path.resolve(qdir, f) !== path.resolve(recordPath)) {
+            prior.push({ id: q.id || f, slot: q.slot, generated_at: q.generated_at,
+                         text: q.tweet?.text || '', claims: q.claims || [], card: q.card || {} });
+          }
+        } catch { /* a malformed queue file is not this run's problem */ }
+      }
+    }
+  }
+  const nowUtc = payload.now_utc || rec.generated_at;
 
   /* A skip record is a different object with different obligations. */
   if (rec.post !== true) {
@@ -245,29 +341,76 @@ function main() {
     else r.pass(exempted.length ? `ok (structural, unclaimed by design: ${[...new Set(exempted)].join(', ')})` : 'ok');
   }
 
-  /* 3 — claim source_fields resolve */
+  /* 3 — every claim carries a well-formed, resolvable source */
   {
-    const r = rule(3, 'claim source_fields resolve');
-    const bad = (rec.claims || []).filter((c) => resolveField(payload, c.source_field) === undefined);
-    if (!(rec.claims || []).length) r.fail('claims[] is empty but the post carries numerals');
-    else if (bad.length) r.fail(`unresolvable: ${bad.map((c) => c.source_field).join(', ')}`);
-    else r.pass(`${rec.claims.length} claims resolve`);
-  }
-
-  /* 4 — claim values match the payload */
-  {
-    const r = rule(4, 'claim values match payload');
+    const r = rule(3, 'claim sources are well-formed');
+    const claims = rec.claims || [];
     const bad = [];
-    for (const c of rec.claims || []) {
-      const actual = resolveField(payload, c.source_field);
-      if (actual === undefined) continue;
-      if (typeof c.value === 'number' && typeof actual === 'number') {
-        if (Math.abs(actual - c.value) > FLOAT_TOL) bad.push(`${c.source_field}: claimed ${c.value}, payload ${actual}`);
-      } else if (String(actual) !== String(c.value)) {
-        bad.push(`${c.source_field}: claimed ${c.value}, payload ${actual}`);
+    for (const c of claims) {
+      const src = claimSource(c);
+      const tag = c.assertion || JSON.stringify(c.value);
+      if (!src || !src.kind) { bad.push(`${tag}: no source`); continue; }
+      if (!SOURCE_KINDS.includes(src.kind)) { bad.push(`${tag}: unknown source kind "${src.kind}"`); continue; }
+      if (src.kind === 'payload') {
+        if (!hasPayload) bad.push(`${tag}: payload source but no --payload given`);
+        else if (resolveField(payload, src.field) === undefined) bad.push(`${tag}: unresolvable ${src.field}`);
+      } else if (src.kind === 'web') {
+        if (!/^https?:\/\//.test(src.url || '')) bad.push(`${tag}: web source needs an http(s) url`);
+        if (!src.quoted_text) bad.push(`${tag}: web source needs quoted_text — a URL alone is not checkable`);
+        if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(src.retrieved_at || '')) bad.push(`${tag}: web source needs retrieved_at as ISO 8601 Z`);
+      } else {
+        if (!COMPUTE[src.method]) bad.push(`${tag}: computed source needs method in ${Object.keys(COMPUTE).join('|')}`);
+        if (!Array.isArray(src.inputs) || !src.inputs.length || src.inputs.some((x) => typeof x !== 'number')) {
+          bad.push(`${tag}: computed source needs a non-empty numeric inputs[]`);
+        }
       }
     }
-    if (bad.length) r.fail(bad.join(' | ')); else r.pass();
+    if (!claims.length) r.fail('claims[] is empty but the post carries numerals');
+    else if (bad.length) r.fail(bad.join(' | '));
+    else {
+      const by = claims.reduce((a, c) => { const k = claimSource(c).kind; a[k] = (a[k] || 0) + 1; return a; }, {});
+      r.pass(Object.entries(by).map(([k, n]) => `${n} ${k}`).join(', '));
+    }
+  }
+
+  /* 4 — claim values match their source */
+  {
+    const r = rule(4, 'claim values match their source');
+    const bad = [], signFlips = [];
+    for (const c of rec.claims || []) {
+      const src = claimSource(c);
+      if (!src || !src.kind) continue;
+      const tag = c.assertion || String(c.value);
+
+      if (src.kind === 'payload') {
+        const actual = resolveField(payload, src.field);
+        if (actual === undefined) continue;
+        if (typeof c.value === 'number' && typeof actual === 'number') {
+          if (Math.abs(actual - c.value) > FLOAT_TOL) bad.push(`${src.field}: claimed ${c.value}, payload ${actual}`);
+        } else if (String(actual) !== String(c.value)) {
+          bad.push(`${src.field}: claimed ${c.value}, payload ${actual}`);
+        }
+
+      } else if (src.kind === 'web') {
+        /* Offline half of the web check: the number must at least appear in
+         * the snippet the writer says it read. Catches a value quietly
+         * drifting from its own quote. Rule 21 does the online half. */
+        if (!valueInQuote(c.value, src.quoted_text)) {
+          bad.push(`${tag}: ${c.value} does not appear in its own quoted_text ("${String(src.quoted_text).slice(0, 60)}")`);
+        } else if (signMismatch(c.value, src.quoted_text)) {
+          signFlips.push(`${tag}: claimed ${c.value} but the source reads "${String(src.quoted_text).slice(0, 40)}" — check the direction word in the text`);
+        }
+
+      } else if (src.kind === 'computed') {
+        const got = COMPUTE[src.method](src.inputs);
+        if (!Number.isFinite(got) || Math.abs(got - c.value) > FLOAT_TOL) {
+          bad.push(`${tag}: ${src.method} of ${src.inputs.length} inputs is ${Number(got).toFixed(4)}, claimed ${c.value}`);
+        }
+      }
+    }
+    if (bad.length) r.fail(bad.join(' | '));
+    else if (signFlips.length) r.warn(`MANUAL REVIEW — ${signFlips.join(' | ')}`);
+    else r.pass();
   }
 
   /* 5 — char_count accurate, every item <= 280 */
@@ -539,6 +682,62 @@ function main() {
     if (m) r.fail(`"${m[0]}" — use a percentile instead`); else r.pass();
   }
 
+  /* 21 — source verification (network). Kevin's call: an unverifiable number
+   * does not kill the post, it routes the post to manual review. So this
+   * warns rather than fails — which means the queue review is the only thing
+   * standing between a wrong number and a card. Make the warnings loud. */
+  {
+    const r = rule(21, 'web sources verify');
+    const webClaims = (rec.claims || []).filter((c) => (claimSource(c) || {}).kind === 'web');
+    if (!webClaims.length) r.skip('no web-sourced claims');
+    else if (!verifySources) r.skip(`${webClaims.length} web claim(s) unchecked — pass --verify-sources to re-fetch`);
+    else {
+      const unverified = [];
+      const pages = new Map();
+      let fetched = 0, unreachable = 0;
+      for (const c of webClaims) {
+        const src = claimSource(c);
+        if (!pages.has(src.url)) pages.set(src.url, await fetchText(src.url));
+        const body = pages.get(src.url);
+        const tag = c.assertion || String(c.value);
+        if (body === null) { unreachable++; unverified.push(`${tag}: could not fetch ${src.url}`); continue; }
+        fetched++;
+        const hay = flatten(body);
+        const needle = flatten(src.quoted_text);
+        if (!hay.includes(needle)) {
+          /* The quote may have been true and the page since moved. Fall back to
+           * asking whether the number itself is still on the page, which
+           * distinguishes "stale quote" from "invented number". */
+          const stillThere = valueInQuote(c.value, hay);
+          unverified.push(`${tag}: quote not found on ${src.url}${stillThere ? ' (the value is still on the page — likely a reworded quote)' : ' AND the value is not on the page either — treat as unsourced'}`);
+        }
+      }
+      /* Distinguish "this environment has no egress" from "this quote is
+       * wrong". Conflating them trains the reader to ignore the rule, and a
+       * warning nobody reads is worse than no warning. */
+      if (fetched === 0 && unreachable > 0) {
+        r.skip(`source verification unavailable — no outbound network to any of ${pages.size} host(s). Every web claim in this record is unverified by machine; it rests entirely on manual review.`);
+      } else if (unverified.length) {
+        r.warn(`MANUAL REVIEW — ${unverified.length}/${webClaims.length} unverified: ${unverified.join(' | ')}`);
+      } else r.pass(`${webClaims.length} web claim(s) re-fetched and confirmed`);
+    }
+  }
+
+  /* 22 — researched prices go stale fast */
+  {
+    const r = rule(22, 'web sources are fresh');
+    const webClaims = (rec.claims || []).filter((c) => (claimSource(c) || {}).kind === 'web');
+    const gen = Date.parse(rec.generated_at);
+    if (!webClaims.length || !Number.isFinite(gen)) r.skip('no web-sourced claims');
+    else {
+      const stale = webClaims
+        .map((c) => ({ c, min: (gen - Date.parse(claimSource(c).retrieved_at)) / 60000 }))
+        .filter((x) => Number.isFinite(x.min) && x.min > 120);
+      if (stale.length) r.warn(`${stale.map((x) => `${x.c.assertion || x.c.value} read ${Math.round(x.min)} min before publishing`).join('; ')}`);
+      else r.pass();
+    }
+  }
+
   report(results, asJSON);
 }
 
@@ -552,9 +751,12 @@ function report(res, asJSON) {
       const mark = r.status === 'pass' ? 'ok  ' : r.status === 'FAIL' ? 'FAIL' : r.status === 'warn' ? 'warn' : 'skip';
       console.log(`[${mark}] ${String(r.n).padStart(2)}. ${r.title}${r.message ? ' — ' + r.message : ''}`);
     }
+    const review = res.some((r) => r.status === 'warn' && /MANUAL REVIEW/.test(r.message || ''));
     console.log(failed.length
       ? `\nDO NOT POST — ${failed.length} rule(s) failed.`
-      : `\nOK to post${warned.length ? ` (${warned.length} warning(s) — read them)` : ''}.`);
+      : review
+        ? `\nMANUAL REVIEW REQUIRED — a number could not be verified against its source.\nDo not post until you have checked it yourself.`
+        : `\nOK to post${warned.length ? ` (${warned.length} warning(s) — read them)` : ''}.`);
   }
   process.exit(failed.length ? 1 : 0);
 }
