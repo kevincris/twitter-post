@@ -131,7 +131,7 @@ Return only this JSON (written to the review queue path the runner gives you). N
     "layout_variant": "hero-median",
     "html_path": "out/2026-08-19_pre_event.html",
     "png_path": "out/2026-08-19_pre_event.png",
-    "logo_asset": "assets/brand/bearpaws-logo.svg",
+    "logo_asset": "bearpaws_logo_white.svg",
     "design_notes": "median as hero numeral top-left; histogram right two-thirds; n set under title"
   },
   "generated_at": "2026-08-19T12:00:00Z"
@@ -164,7 +164,12 @@ You design and render the card yourself. This replaces the old Claude Design bri
   Every color literal in the file must be one of these four (case-insensitive). Tints and emphasis only via `opacity` or `color-mix()` over the tokens — no new hex values.
 - Labels in Inter. All numerals in a mono face with tabular figures (`font-variant-numeric: tabular-nums`).
 - Flat. No gradients, no glow, no drop shadows, no borders-as-decoration.
-- **Logo from the repo:** locate the brand logo asset in the repo (look in `assets/`, `brand/`, `public/`, `static/`; prefer SVG). Composite the file **as-is** — never redraw, recolor, restyle, or approximate it. Record its path in `card.logo_asset`. If no logo asset exists in the repo, render without one and add `risk_flag: "logo_asset_missing"` — do not generate a substitute.
+- **Logo from the repo:** the brand logo is `bearpaws_logo_white.svg` at the repo root. Composite the file **as-is** — never redraw, recolor, restyle, or approximate it. Record its path in `card.logo_asset`. Only if that file is genuinely absent do you render without one and add `risk_flag: "logo_asset_missing"` — do not generate a substitute, and do not fall back to drawing something logo-shaped.
+- **Embed the logo as a base64 `data:` URI**, not as inlined SVG markup and not as an external `src` path. This is not a style preference — it is what makes the card pass both card rules at once. The logo contains `fill="white"`, which is a color literal outside the four brand tokens; inlined, it fails the token rule, and recolored, it fails the logo-integrity hash. Base64 keeps the bytes hash-identical and keeps the file self-contained. Build it with:
+  ```
+  base64 -w0 bearpaws_logo_white.svg
+  ```
+  and set `src="data:image/svg+xml;base64,<output>"`. Size and position the logo with CSS on the `<img>`; never touch its interior.
 - No arrows, no directional color-coding (green-up/red-down), no price targets, no commentary text, no number that is not in `claims`.
 - `pre_event` cards carry the footer, verbatim and unaltered: **"Describes prior behaviour. Not a forecast."**
 - Every numeral shown on the card must exist in the HTML as real text or a `data-value` attribute — never baked only into canvas pixels or paths — so the validator can extract and check it.
@@ -255,7 +260,7 @@ Run in order. Any failure → do not post, write to skip-log with the failing ru
 9. Cosine similarity vs last 72h posts < 0.85
 10. **Card data integrity:** parse `card.html_path`; every numeral found in text nodes and `data-value` attributes appears in `claims`. The card is a publication surface, not scratch text.
 11. **Card tokens:** every color literal in the HTML/CSS ∈ {#0B0F19, #3B82F6, #E8EDF7, #64748B} (case-insensitive); the four `--bp-*` custom property declarations are byte-identical to the canonical block.
-12. **Logo integrity:** `card.logo_asset` exists in the repo and its bytes are referenced/embedded unmodified (compare hash), or `risk_flags` contains `"logo_asset_missing"`.
+12. **Logo integrity:** `card.logo_asset` exists in the repo and its bytes are embedded unmodified — decode the `data:image/svg+xml;base64,` payload in the card HTML and compare its SHA-256 against the asset on disk — or `risk_flags` contains `"logo_asset_missing"`. Rule 11's color scan runs on the card HTML with the base64 payload excised, so the logo's own `fill="white"` never trips it.
 13. **Render check:** `card.png_path` exists, is exactly 1600×900 (or 3200×1800 @2x), and is non-blank.
 14. **Variant rotation:** `card.layout_variant` differs from the previous post in this slot and from the immediately preceding post in any slot (from `prior_posts`).
 15. All timestamps in the output JSON parse as ISO 8601 UTC (`Z`-suffixed); no `WIB`, `ET`, or `+07:00` strings anywhere in tweet text or card text.

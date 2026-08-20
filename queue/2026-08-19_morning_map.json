@@ -1,0 +1,49 @@
+{
+  "slot": "morning_map",
+  "post": true,
+  "skip_reason": null,
+  "tweet": {
+    "text": "3,421.8 and 3,402.0 bracket the session. Above 3,421.8 the prior-day high is reference, not resistance; a hold below 3,402.0 puts the weekly open in control. Asia ranged 3,414.0 to 3,399.5. Core PCE 12:30 UTC. $XAUUSD",
+    "char_count": 217,
+    "thread": []
+  },
+  "claims": [
+    {
+      "assertion": "prior day high at 3421.8",
+      "value": 3421.8,
+      "source_field": "market_state.levels[1].price"
+    },
+    {
+      "assertion": "weekly open at 3402.0",
+      "value": 3402,
+      "source_field": "market_state.levels[0].price"
+    },
+    {
+      "assertion": "Asia range high 3414.0",
+      "value": 3414,
+      "source_field": "market_state.asia_range.high"
+    },
+    {
+      "assertion": "Asia range low 3399.5",
+      "value": 3399.5,
+      "source_field": "market_state.asia_range.low"
+    },
+    {
+      "assertion": "Core PCE release time",
+      "value": "2026-08-20T12:30:00Z",
+      "source_field": "calendar[0].time_utc"
+    }
+  ],
+  "references_prior_post_id": null,
+  "risk_flags": [],
+  "humanizer_score": 0,
+  "card": {
+    "template": "levels",
+    "layout_variant": "bracket-split",
+    "html_path": "out/2026-08-19_morning_map.html",
+    "png_path": "out/2026-08-19_morning_map.png",
+    "logo_asset": "bearpaws_logo_white.svg",
+    "design_notes": "paired columns, the two deciding levels as equal heroes with the accent axis between them"
+  },
+  "generated_at": "2026-08-19T23:30:00Z"
+}

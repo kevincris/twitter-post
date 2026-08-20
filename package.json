@@ -1,0 +1,16 @@
+{
+  "name": "bearpaws-twitter-post",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Bearpaws X post generator — spec, humanizer, validator.",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "test": "node fixtures/negative_tests.js",
+    "validate": "node tools/validator/validate.js",
+    "score": "node tools/humanizer/cli.js score",
+    "fixture": "node fixtures/build_card.js && node fixtures/render.js && node tools/validator/validate.js --record queue/2026-08-19_morning_map.json --payload fixtures/payload.json"
+  },
+  "devDependencies": {
+    "playwright": "^1.47.0"
+  }
+}
