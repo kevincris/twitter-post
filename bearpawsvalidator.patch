@@ -1,0 +1,2555 @@
+From 7e719b03607bab7febc5e2304a9baafd4b5b10f5 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 20 Aug 2026 14:21:03 +0000
+Subject: [PATCH 1/2] Add validator (rules 1-20), fix logo path in spec,
+ scaffold repo
+
+- tools/validator/validate.js: dependency-free implementation of all 20
+  validator rules, recomputing thresholds/percentiles from the payload
+  rather than trusting the record
+- fixtures/: known-good morning_map example plus 27 negative tests
+- spec: logo lives at bearpaws_logo_white.svg, not assets/brand/; require
+  base64 data-URI embedding so rules 11 and 12 stop contradicting
+- package.json, .gitignore, drop committed .DS_Store
+---
+ .DS_Store                         | Bin 6148 -> 0 bytes
+ .gitignore                        |   4 +
+ bearpaws_runner_prompt_v2.md      |  11 +-
+ fixtures/build_card.js            |  72 ++++
+ fixtures/negative_tests.js        | 181 ++++++++++
+ fixtures/render.js                |   9 +
+ out/2026-08-19_morning_map.html   |  54 +++
+ out/2026-08-19_morning_map.png    | Bin 0 -> 57445 bytes
+ package.json                      |  16 +
+ queue/2026-08-19_morning_map.json |  49 +++
+ tools/.DS_Store                   | Bin 6148 -> 0 bytes
+ tools/validator/README.md         |  65 ++++
+ tools/validator/validate.js       | 562 ++++++++++++++++++++++++++++++
+ 13 files changed, 1020 insertions(+), 3 deletions(-)
+ delete mode 100644 .DS_Store
+ create mode 100644 .gitignore
+ create mode 100644 fixtures/build_card.js
+ create mode 100644 fixtures/negative_tests.js
+ create mode 100644 fixtures/render.js
+ create mode 100644 out/2026-08-19_morning_map.html
+ create mode 100644 out/2026-08-19_morning_map.png
+ create mode 100644 package.json
+ create mode 100644 queue/2026-08-19_morning_map.json
+ delete mode 100644 tools/.DS_Store
+ create mode 100644 tools/validator/README.md
+ create mode 100644 tools/validator/validate.js
+
+diff --git a/.DS_Store b/.DS_Store
+deleted file mode 100644
+index 7bde23891f5a0e8b8dfea80c7f18e16683e41015..0000000000000000000000000000000000000000
+GIT binary patch
+literal 0
+HcmV?d00001
+
+literal 6148
+zcmeHK%}&BV5Z>iSAjE`&8WS&@cqI``@F!ks#TT$f4{ETr1R6`1&>{yy(xX0s9(@X*
+z!HZWP!)I{zrv}8In-DWYX203lnceQ!W|tv^P_yq=2`Ldm@}L4!1!%qyF)nmUQrfcs
+zNaY-%GYGqm&z-4Qbj&9M;@xFQL^%9>GXDOaoUZSMQKj-qQ|U~0AqP^-U07{Cup&F^
+zho;>-6TM^3eJ8PP=frCc8l|NJ9z?bmG<!0^bDI!ye(D7-ADFx!xS`Co)Ib5GQCb-e
+zD`mE|J1VnbwN~9Mvz_hQXjI5AuW#%fHLm?mz;6|e6uvhpiy9NS17mDIeyeI-@lH1x
+zo*eD)dR>35`L~Cc`^UBC{m&8ZFA?4LPb=J5y};)|3uaB8c<fQoL<W!nWMD=N=o2Yl
+zoYDHYEHZ!$%r67td|;pg4UMrvd2~P{O8~$OxTSzCY6+3UG#VOXg)jm_RVtuLrMkqR
+zDjobx#~B)9g({s;U3^fzGSw9dm8--2OokI`D8v>SKn5lmNULs1-2aE)*Z-4A*h2=8
+zfq%sS&D5>B30u;4>(u7NUCTf(L4}C8Sm8$s81gEHSaB7vf=U5D69%B6F;)m35d0$`
+MX}|^<_)`Yn0T_2_HUIzs
+
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..f7f5d69
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,4 @@
++.DS_Store
++node_modules/
++payload.json
++repo/
+diff --git a/bearpaws_runner_prompt_v2.md b/bearpaws_runner_prompt_v2.md
+index 31239ec..22a9872 100644
+--- a/bearpaws_runner_prompt_v2.md
++++ b/bearpaws_runner_prompt_v2.md
+@@ -131,7 +131,7 @@ Return only this JSON (written to the review queue path the runner gives you). N
+     "layout_variant": "hero-median",
+     "html_path": "out/2026-08-19_pre_event.html",
+     "png_path": "out/2026-08-19_pre_event.png",
+-    "logo_asset": "assets/brand/bearpaws-logo.svg",
++    "logo_asset": "bearpaws_logo_white.svg",
+     "design_notes": "median as hero numeral top-left; histogram right two-thirds; n set under title"
+   },
+   "generated_at": "2026-08-19T12:00:00Z"
+@@ -164,7 +164,12 @@ You design and render the card yourself. This replaces the old Claude Design bri
+   Every color literal in the file must be one of these four (case-insensitive). Tints and emphasis only via `opacity` or `color-mix()` over the tokens — no new hex values.
+ - Labels in Inter. All numerals in a mono face with tabular figures (`font-variant-numeric: tabular-nums`).
+ - Flat. No gradients, no glow, no drop shadows, no borders-as-decoration.
+-- **Logo from the repo:** locate the brand logo asset in the repo (look in `assets/`, `brand/`, `public/`, `static/`; prefer SVG). Composite the file **as-is** — never redraw, recolor, restyle, or approximate it. Record its path in `card.logo_asset`. If no logo asset exists in the repo, render without one and add `risk_flag: "logo_asset_missing"` — do not generate a substitute.
++- **Logo from the repo:** the brand logo is `bearpaws_logo_white.svg` at the repo root. Composite the file **as-is** — never redraw, recolor, restyle, or approximate it. Record its path in `card.logo_asset`. Only if that file is genuinely absent do you render without one and add `risk_flag: "logo_asset_missing"` — do not generate a substitute, and do not fall back to drawing something logo-shaped.
++- **Embed the logo as a base64 `data:` URI**, not as inlined SVG markup and not as an external `src` path. This is not a style preference — it is what makes the card pass both card rules at once. The logo contains `fill="white"`, which is a color literal outside the four brand tokens; inlined, it fails the token rule, and recolored, it fails the logo-integrity hash. Base64 keeps the bytes hash-identical and keeps the file self-contained. Build it with:
++  ```
++  base64 -w0 bearpaws_logo_white.svg
++  ```
++  and set `src="data:image/svg+xml;base64,<output>"`. Size and position the logo with CSS on the `<img>`; never touch its interior.
+ - No arrows, no directional color-coding (green-up/red-down), no price targets, no commentary text, no number that is not in `claims`.
+ - `pre_event` cards carry the footer, verbatim and unaltered: **"Describes prior behaviour. Not a forecast."**
+ - Every numeral shown on the card must exist in the HTML as real text or a `data-value` attribute — never baked only into canvas pixels or paths — so the validator can extract and check it.
+@@ -255,7 +260,7 @@ Run in order. Any failure → do not post, write to skip-log with the failing ru
+ 9. Cosine similarity vs last 72h posts < 0.85
+ 10. **Card data integrity:** parse `card.html_path`; every numeral found in text nodes and `data-value` attributes appears in `claims`. The card is a publication surface, not scratch text.
+ 11. **Card tokens:** every color literal in the HTML/CSS ∈ {#0B0F19, #3B82F6, #E8EDF7, #64748B} (case-insensitive); the four `--bp-*` custom property declarations are byte-identical to the canonical block.
+-12. **Logo integrity:** `card.logo_asset` exists in the repo and its bytes are referenced/embedded unmodified (compare hash), or `risk_flags` contains `"logo_asset_missing"`.
++12. **Logo integrity:** `card.logo_asset` exists in the repo and its bytes are embedded unmodified — decode the `data:image/svg+xml;base64,` payload in the card HTML and compare its SHA-256 against the asset on disk — or `risk_flags` contains `"logo_asset_missing"`. Rule 11's color scan runs on the card HTML with the base64 payload excised, so the logo's own `fill="white"` never trips it.
+ 13. **Render check:** `card.png_path` exists, is exactly 1600×900 (or 3200×1800 @2x), and is non-blank.
+ 14. **Variant rotation:** `card.layout_variant` differs from the previous post in this slot and from the immediately preceding post in any slot (from `prior_posts`).
+ 15. All timestamps in the output JSON parse as ISO 8601 UTC (`Z`-suffixed); no `WIB`, `ET`, or `+07:00` strings anywhere in tweet text or card text.
+diff --git a/fixtures/build_card.js b/fixtures/build_card.js
+new file mode 100644
+index 0000000..891dadc
+--- /dev/null
++++ b/fixtures/build_card.js
+@@ -0,0 +1,72 @@
++#!/usr/bin/env node
++/* Fixture card builder — proves the card rules are satisfiable in practice.
++ * Variant: "bracket-split" — the two deciding levels as paired columns with
++ * the live print on the axis between them. */
++'use strict';
++const fs = require('fs');
++const p = JSON.parse(fs.readFileSync('fixtures/payload.json', 'utf8'));
++const logo = fs.readFileSync('bearpaws_logo_white.svg').toString('base64');
++
++const hi = p.market_state.levels[1].price.toFixed(1);
++const lo = p.market_state.levels[0].price.toFixed(1);
++const ah = p.market_state.asia_range.high.toFixed(1);
++const al = p.market_state.asia_range.low.toFixed(1);
++const t = p.calendar[0].time_utc.slice(11, 16);
++
++const html = `<!doctype html>
++<html><head><meta charset="utf-8"><style>
++:root {
++  --bp-surface: #0B0F19;
++  --bp-accent: #3B82F6;
++  --bp-text: #E8EDF7;
++  --bp-muted: #64748B;
++}
++* { margin:0; padding:0; box-sizing:border-box; }
++html,body { width:1600px; height:900px; }
++body {
++  background: var(--bp-surface); color: var(--bp-text);
++  font-family: Inter, system-ui, sans-serif;
++  display:grid; grid-template-rows:auto 1fr auto; padding:72px 88px;
++}
++.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
++header { display:flex; justify-content:space-between; align-items:baseline; }
++h1 { font-size:34px; font-weight:600; letter-spacing:-0.01em; }
++.slot { color: var(--bp-muted); font-size:22px; letter-spacing:0.08em; text-transform:uppercase; }
++main { display:grid; grid-template-columns:1fr 2px 1fr; align-items:center; gap:0 64px; }
++.side { display:flex; flex-direction:column; gap:14px; }
++.side.low { text-align:right; }
++.cap { color: var(--bp-muted); font-size:24px; letter-spacing:0.04em; }
++.lvl { font-size:132px; line-height:1; font-weight:600; letter-spacing:-0.03em; }
++.axis { background: var(--bp-accent); height:340px; width:2px; align-self:center; }
++.range { color: var(--bp-muted); font-size:26px; }
++.range b { color: var(--bp-text); font-weight:500; }
++footer { display:flex; justify-content:space-between; align-items:flex-end; }
++.evt { font-size:28px; }
++.evt span { color: var(--bp-muted); }
++img.logo { height:34px; opacity:0.9; }
++</style></head><body>
++<header>
++  <h1>${p.instrument}</h1>
++  <div class="slot">Session map</div>
++</header>
++<main>
++  <div class="side">
++    <div class="cap">Above &mdash; prior day high</div>
++    <div class="lvl mono" data-value="${hi}">${hi}</div>
++    <div class="range">Asia high <b class="mono" data-value="${ah}">${ah}</b></div>
++  </div>
++  <div class="axis"></div>
++  <div class="side low">
++    <div class="cap">Below &mdash; weekly open</div>
++    <div class="lvl mono" data-value="${lo}">${lo}</div>
++    <div class="range">Asia low <b class="mono" data-value="${al}">${al}</b></div>
++  </div>
++</main>
++<footer>
++  <div class="evt"><span>Core PCE</span> <b class="mono" data-value="${t}">${t}</b> <span>UTC</span></div>
++  <img class="logo" src="data:image/svg+xml;base64,${logo}" alt="Bearpaws">
++</footer>
++</body></html>`;
++
++fs.writeFileSync('out/2026-08-19_morning_map.html', html);
++console.log('card html written');
+diff --git a/fixtures/negative_tests.js b/fixtures/negative_tests.js
+new file mode 100644
+index 0000000..67e0650
+--- /dev/null
++++ b/fixtures/negative_tests.js
+@@ -0,0 +1,181 @@
++#!/usr/bin/env node
++/* Negative tests: mutate the known-good fixture one way at a time and assert
++ * the intended rule fails. A validator that only ever says "ok" is decoration. */
++'use strict';
++const fs = require('fs');
++const { execFileSync } = require('child_process');
++
++const REC = 'queue/2026-08-19_morning_map.json';
++const PAY = 'fixtures/payload.json';
++const HTML = 'out/2026-08-19_morning_map.html';
++const PNG = 'out/2026-08-19_morning_map.png';
++
++const goodRec = fs.readFileSync(REC, 'utf8');
++const goodPay = fs.readFileSync(PAY, 'utf8');
++const goodHtml = fs.readFileSync(HTML, 'utf8');
++const goodPng = fs.readFileSync(PNG);
++
++const clone = () => JSON.parse(goodRec);
++
++const CASES = [
++  ['2  unclaimed numeral in tweet', 2, (r) => {
++    r.tweet.text = r.tweet.text.replace('Core PCE', 'ETF flows 7.4t, Core PCE');
++    r.tweet.char_count = [...r.tweet.text].length;
++  }],
++  ['3  unresolvable source_field', 3, (r) => { r.claims[0].source_field = 'market_state.levels[9].price'; }],
++  ['4  claim value differs from payload', 4, (r) => { r.claims[0].value = 3421.9; }],
++  ['5  char_count lies', 5, (r) => { r.tweet.char_count = 100; }],
++  ['6  trader directive', 6, (r) => {
++    r.tweet.text = r.tweet.text.replace('is reference, not resistance', 'is where you buy');
++    r.tweet.char_count = [...r.tweet.text].length;
++  }],
++  ['6  price target', 6, (r) => {
++    r.tweet.text = r.tweet.text.replace('bracket the session', 'is the target');
++    r.tweet.char_count = [...r.tweet.text].length;
++  }],
++  ['8  slot already posted today', 8, (r) => r, (p) => {
++    p.prior_posts.unshift({ id: 'x', slot: 'morning_map', generated_at: '2026-08-19T23:00:00Z', text: 'z', claims: [], card: { layout_variant: 'hero-n' } });
++  }],
++  ['9  near-duplicate of a prior post', 9, (r) => r, (p) => {
++    const t = JSON.parse(goodRec).tweet.text;
++    p.prior_posts.unshift({ id: 'x', slot: 'recap', generated_at: '2026-08-18T21:00:00Z', text: t, card: { layout_variant: 'hero-n' } });
++  }],
++  ['10 unclaimed numeral on the card', 10, (r) => r, null, (h) => h.replace('Session map', 'Session map 88')],
++  ['10 numeral smuggled in via CSS content', 10, (r) => r, null,
++    (h) => h.replace('.slot {', '.slot::after { content:" 88"; }\n.slot {')],
++  ['11 off-token hex in the card', 11, (r) => r, null, (h) => h.replace('opacity:0.9;', 'opacity:0.9; color:#FF0000;')],
++  ['11 named colour in the card', 11, (r) => r, null, (h) => h.replace('background: var(--bp-surface);', 'background: black;')],
++  ['11 tampered --bp- declaration', 11, (r) => r, null, (h) => h.replace('--bp-accent: #3B82F6;', '--bp-accent: #3b82f6;')],
++  ['12 logo inlined as markup, not base64', 12, (r) => r, null,
++    (h) => h.replace(/<img class="logo"[^>]*>/, '<svg width="80" height="20"><circle cx="10" cy="10" r="9" fill="#3B82F6"/></svg>')],
++  ['12 logo recoloured before embedding', 12, (r) => r, null, (h) => {
++    const m = h.match(/base64,([A-Za-z0-9+/=]+)/);
++    const svg = Buffer.from(m[1], 'base64').toString('utf8').replace(/#3B82F6/g, '#64748B');
++    return h.replace(m[1], Buffer.from(svg).toString('base64'));
++  }],
++  ['14 variant repeats previous post', 14, (r) => { r.card.layout_variant = 'ladder-left'; }],
++  ['15 local timezone leaks into text', 15, (r) => {
++    r.tweet.text = r.tweet.text.replace('12:30 UTC', '19:30 WIB');
++    r.tweet.char_count = [...r.tweet.text].length;
++  }],
++  ['16 one-sided map, unflagged', 16, (r) => {
++    r.tweet.text = '3,421.8 and 3,402.0 bracket it. Above 3,421.8 the prior-day high is reference. Asia ranged 3,414.0 to 3,399.5. Core PCE 12:30 UTC.';
++    r.tweet.char_count = [...r.tweet.text].length;
++  }],
++  ['17 Tier-1 vocabulary', 17, (r) => {
++    r.tweet.text = r.tweet.text.replace('bracket the session', 'are the crucial levels');
++    r.tweet.char_count = [...r.tweet.text].length;
++  }],
++  ['18 no digit in the hook', 18, (r) => {
++    r.tweet.text = 'The session is bracketed above and below. Above 3,421.8 the prior-day high is reference; a hold below 3,402.0 puts the weekly open in control. Asia ranged 3,414.0 to 3,399.5. Core PCE 12:30 UTC.';
++    r.tweet.char_count = [...r.tweet.text].length;
++  }],
++  ['20 magnitude adjective', 20, (r) => {
++    r.tweet.text = r.tweet.text.replace('Asia ranged', 'Asia moved sharply between');
++    r.tweet.char_count = [...r.tweet.text].length;
++  }],
++  ['13 wrong render dimensions', 13, (r) => r, null, null, true],
++];
++
++let passed = 0, failed = 0;
++
++for (const [name, wantRule, mutRec, mutPay, mutHtml, breakPng] of CASES) {
++  const rec = clone();
++  if (mutRec) mutRec(rec);
++  const pay = JSON.parse(goodPay);
++  if (mutPay) mutPay(pay);
++  fs.writeFileSync(REC, JSON.stringify(rec, null, 2));
++  fs.writeFileSync(PAY, JSON.stringify(pay, null, 2));
++  fs.writeFileSync(HTML, mutHtml ? mutHtml(goodHtml) : goodHtml);
++  if (breakPng) {
++    const b = Buffer.from(goodPng); b.writeUInt32BE(1200, 16); fs.writeFileSync(PNG, b);
++  } else fs.writeFileSync(PNG, goodPng);
++
++  let out = '';
++  try { out = execFileSync('node', ['tools/validator/validate.js', '--record', REC, '--payload', PAY, '--json'], { encoding: 'utf8' }); }
++  catch (e) { out = e.stdout || ''; }
++
++  let hit = false, msg = '';
++  try {
++    const j = JSON.parse(out);
++    const f = j.results.find((x) => x.n === wantRule && x.status === 'FAIL');
++    hit = Boolean(f); msg = f ? f.message : (j.results.find((x) => x.status === 'FAIL')?.n ?? 'nothing');
++  } catch { msg = 'validator produced no JSON'; }
++
++  if (hit) { passed++; console.log(`  ok    ${name}  ->  rule ${wantRule} caught it`); }
++  else { failed++; console.log(`  MISS  ${name}  ->  expected rule ${wantRule}, got ${msg}`); }
++}
++
++/* ---- slot-specific rules: 7 (threshold) and 19 (pairing) ----------------
++ * These are the anti-self-grading rules. The record asserts it cleared the
++ * bar; the validator recomputes the bar from the payload and disagrees. */
++
++const SLOT_CASES = [
++  ['7  london_open below both thresholds but claims post', 7, (r, p) => {
++    r.slot = 'london_open';
++    p.slot = 'london_open';
++    p.market_state.atr20 = 28.4;
++    p.market_state.asia_range = { high: 3409.0, low: 3405.0 };  // 4.0 vs 9.94 needed
++    p.market_state.last = 3450.0;                                // 28.2 from nearest vs 4.26 needed
++  }],
++  ['7  pre_event with too small a sample', 7, (r, p) => {
++    r.slot = 'pre_event'; p.slot = 'pre_event';
++    p.now_utc = '2026-08-20T11:30:00Z';
++    p.ere = { event_key: 'us_core_pce_mom', n: 11 };
++  }],
++  ['7  pre_event outside the 90 minute window', 7, (r, p) => {
++    r.slot = 'pre_event'; p.slot = 'pre_event';
++    p.now_utc = '2026-08-20T08:00:00Z';
++    p.ere = { event_key: 'us_core_pce_mom', n: 47 };
++  }],
++  ['19 post_event references the wrong prior post', 19, (r, p) => {
++    r.slot = 'post_event';
++    r.references_prior_post_id = 'wrong-id';
++    p.slot = 'post_event';
++    p.realized = { event_key: 'us_core_pce_mom', print: 0.4, consensus: 0.3, move_30m_abs: 14.2, percentile_vs_ere: 62, pre_event_post_id: 'pre-123' };
++    p.ere = { event_key: 'us_core_pce_mom', n: 47 };
++    p.prior_posts.unshift({ id: 'pre-123', slot: 'pre_event', generated_at: '2026-08-19T22:00:00Z', event_key: 'us_core_pce_mom', text: 'distribution', claims: [], card: { layout_variant: 'hero-n' } });
++  }],
++  ['19 percentile in text contradicts the payload', 19, (r, p) => {
++    r.slot = 'post_event';
++    r.references_prior_post_id = 'pre-123';
++    r.tweet.text = 'Print 0.4 vs 0.3 consensus. 30m move 14.2 — 71st percentile of the n=47 history posted at 12:00 UTC.';
++    r.tweet.char_count = [...r.tweet.text].length;
++    p.slot = 'post_event';
++    p.realized = { event_key: 'us_core_pce_mom', print: 0.4, consensus: 0.3, move_30m_abs: 14.2, percentile_vs_ere: 62, pre_event_post_id: 'pre-123' };
++    p.ere = { event_key: 'us_core_pce_mom', n: 47 };
++    p.prior_posts.unshift({ id: 'pre-123', slot: 'pre_event', generated_at: '2026-08-19T22:00:00Z', event_key: 'us_core_pce_mom', text: 'distribution', claims: [], card: { layout_variant: 'hero-n' } });
++  }],
++];
++
++for (const [name, wantRule, mutate] of SLOT_CASES) {
++  const rec = clone();
++  const pay = JSON.parse(goodPay);
++  mutate(rec, pay);
++  fs.writeFileSync(REC, JSON.stringify(rec, null, 2));
++  fs.writeFileSync(PAY, JSON.stringify(pay, null, 2));
++  fs.writeFileSync(HTML, goodHtml);
++  fs.writeFileSync(PNG, goodPng);
++
++  let out = '';
++  try { out = execFileSync('node', ['tools/validator/validate.js', '--record', REC, '--payload', PAY, '--json'], { encoding: 'utf8' }); }
++  catch (e) { out = e.stdout || ''; }
++
++  let hit = false, msg = '';
++  try {
++    const j = JSON.parse(out);
++    const f = j.results.find((x) => x.n === wantRule && x.status === 'FAIL');
++    hit = Boolean(f); msg = f ? f.message : (j.results.filter((x) => x.status === 'FAIL').map((x) => x.n).join(',') || 'nothing');
++  } catch { msg = 'validator produced no JSON'; }
++
++  if (hit) { passed++; console.log(`  ok    ${name}  ->  rule ${wantRule} caught it`); }
++  else { failed++; console.log(`  MISS  ${name}  ->  expected rule ${wantRule}, got ${msg}`); }
++}
++
++fs.writeFileSync(REC, goodRec);
++fs.writeFileSync(PAY, goodPay);
++fs.writeFileSync(HTML, goodHtml);
++fs.writeFileSync(PNG, goodPng);
++
++console.log(`\n${passed} caught, ${failed} missed.`);
++process.exit(failed ? 1 : 0);
+diff --git a/fixtures/render.js b/fixtures/render.js
+new file mode 100644
+index 0000000..209bc87
+--- /dev/null
++++ b/fixtures/render.js
+@@ -0,0 +1,9 @@
++const { chromium } = require('playwright');
++(async () => {
++  const b = await chromium.launch();
++  const pg = await b.newPage({ viewport: { width: 1600, height: 900 } });
++  await pg.goto('file://' + process.cwd() + '/out/2026-08-19_morning_map.html');
++  await pg.screenshot({ path: 'out/2026-08-19_morning_map.png' });
++  await b.close();
++  console.log('rendered');
++})();
+diff --git a/out/2026-08-19_morning_map.html b/out/2026-08-19_morning_map.html
+new file mode 100644
+index 0000000..c334a84
+--- /dev/null
++++ b/out/2026-08-19_morning_map.html
+@@ -0,0 +1,54 @@
++<!doctype html>
++<html><head><meta charset="utf-8"><style>
++:root {
++  --bp-surface: #0B0F19;
++  --bp-accent: #3B82F6;
++  --bp-text: #E8EDF7;
++  --bp-muted: #64748B;
++}
++* { margin:0; padding:0; box-sizing:border-box; }
++html,body { width:1600px; height:900px; }
++body {
++  background: var(--bp-surface); color: var(--bp-text);
++  font-family: Inter, system-ui, sans-serif;
++  display:grid; grid-template-rows:auto 1fr auto; padding:72px 88px;
++}
++.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; }
++header { display:flex; justify-content:space-between; align-items:baseline; }
++h1 { font-size:34px; font-weight:600; letter-spacing:-0.01em; }
++.slot { color: var(--bp-muted); font-size:22px; letter-spacing:0.08em; text-transform:uppercase; }
++main { display:grid; grid-template-columns:1fr 2px 1fr; align-items:center; gap:0 64px; }
++.side { display:flex; flex-direction:column; gap:14px; }
++.side.low { text-align:right; }
++.cap { color: var(--bp-muted); font-size:24px; letter-spacing:0.04em; }
++.lvl { font-size:132px; line-height:1; font-weight:600; letter-spacing:-0.03em; }
++.axis { background: var(--bp-accent); height:340px; width:2px; align-self:center; }
++.range { color: var(--bp-muted); font-size:26px; }
++.range b { color: var(--bp-text); font-weight:500; }
++footer { display:flex; justify-content:space-between; align-items:flex-end; }
++.evt { font-size:28px; }
++.evt span { color: var(--bp-muted); }
++img.logo { height:34px; opacity:0.9; }
++</style></head><body>
++<header>
++  <h1>XAUUSD</h1>
++  <div class="slot">Session map</div>
++</header>
++<main>
++  <div class="side">
++    <div class="cap">Above &mdash; prior day high</div>
++    <div class="lvl mono" data-value="3421.8">3421.8</div>
++    <div class="range">Asia high <b class="mono" data-value="3414.0">3414.0</b></div>
++  </div>
++  <div class="axis"></div>
++  <div class="side low">
++    <div class="cap">Below &mdash; weekly open</div>
++    <div class="lvl mono" data-value="3402.0">3402.0</div>
++    <div class="range">Asia low <b class="mono" data-value="3399.5">3399.5</b></div>
++  </div>
++</main>
++<footer>
++  <div class="evt"><span>Core PCE</span> <b class="mono" data-value="12:30">12:30</b> <span>UTC</span></div>
++  <img class="logo" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzI4IiBoZWlnaHQ9IjgwIiB2aWV3Qm94PSIwIDAgMzI4IDgwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cGF0aCBkPSJNOSA0MUMxMy45NzA2IDQxIDE4IDM1LjYyNzQgMTggMjlDMTggMjIuMzcyNiAxMy45NzA2IDE3IDkgMTdDNC4wMjk0NCAxNyAwIDIyLjM3MjYgMCAyOUMwIDM1LjYyNzQgNC4wMjk0NCA0MSA5IDQxWiIgZmlsbD0iIzNCODJGNiIvPgo8cGF0aCBkPSJNMjcgMjlDMzEuOTcwNiAyOSAzNiAyMy42Mjc0IDM2IDE3QzM2IDEwLjM3MjYgMzEuOTcwNiA1IDI3IDVDMjIuMDI5NCA1IDE4IDEwLjM3MjYgMTggMTdDMTggMjMuNjI3NCAyMi4wMjk0IDI5IDI3IDI5WiIgZmlsbD0iIzNCODJGNiIvPgo8cGF0aCBkPSJNNTEgMjlDNTUuOTcwNiAyOSA2MCAyMy42Mjc0IDYwIDE3QzYwIDEwLjM3MjYgNTUuOTcwNiA1IDUxIDVDNDYuMDI5NCA1IDQyIDEwLjM3MjYgNDIgMTdDNDIgMjMuNjI3NCA0Ni4wMjk0IDI5IDUxIDI5WiIgZmlsbD0iIzNCODJGNiIvPgo8cGF0aCBkPSJNNjkgNDFDNzMuOTcwNiA0MSA3OCAzNS42Mjc0IDc4IDI5Qzc4IDIyLjM3MjYgNzMuOTcwNiAxNyA2OSAxN0M2NC4wMjk0IDE3IDYwIDIyLjM3MjYgNjAgMjlDNjAgMzUuNjI3NCA2NC4wMjk0IDQxIDY5IDQxWiIgZmlsbD0iIzNCODJGNiIvPgo8cGF0aCBkPSJNMzkgODBDNTUuNTY4NSA4MCA2OSA2OS43MDI1IDY5IDU3QzY5IDQ0LjI5NzUgNTUuNTY4NSAzNCAzOSAzNEMyMi40MzE1IDM0IDkgNDQuMjk3NSA5IDU3QzkgNjkuNzAyNSAyMi40MzE1IDgwIDM5IDgwWiIgZmlsbD0iIzNCODJGNiIvPgo8cGF0aCBkPSJNMTAxLjQxMiA1MlY0Ny41OEgxMTIuMzg0QzExNS4zMzEgNDcuNTggMTE3LjQ2MyA0Ny4wOTQ3IDExOC43OCA0Ni4xMjRDMTIwLjEzMiA0NS4xMTg3IDEyMC44MDggNDMuNjYyNyAxMjAuODA4IDQxLjc1NkMxMjAuODA4IDM5Ljg0OTMgMTIwLjEzMiAzOC40OCAxMTguNzggMzcuNjQ4QzExNy40NjMgMzYuODE2IDExNS4zMzEgMzYuNCAxMTIuMzg0IDM2LjRIMTAxLjQxMlYzMy4zMzJIMTEzLjUyOEMxMTUuNDM1IDMzLjMzMiAxMTcuMTY4IDMzLjQ3MDcgMTE4LjcyOCAzMy43NDhDMTIwLjI4OCAzNC4wMjUzIDEyMS42NCAzNC41MTA3IDEyMi43ODQgMzUuMjA0QzEyMy45MjggMzUuODYyNyAxMjQuODEyIDM2Ljc0NjcgMTI1LjQzNiAzNy44NTZDMTI2LjA5NSAzOC45NjUzIDEyNi40MjQgNDAuMzUyIDEyNi40MjQgNDIuMDE2QzEyNi40MjQgNDQuMiAxMjUuODg3IDQ2LjAzNzMgMTI0LjgxMiA0Ny41MjhDMTIzLjczNyA0OC45ODQgMTIyLjE0MyA1MC4wOTMzIDEyMC4wMjggNTAuODU2QzExNy45MTMgNTEuNjE4NyAxMTUuMzMxIDUyIDExMi4yOCA1MkgxMDEuNDEyWk05Ni43MzIgNTJWMTYuNjRIMTAxLjk4NFY1Mkg5Ni43MzJaTTk5LjU0IDM0Ljk5NlYzMi4wMzJIMTExLjAzMkMxMTMuOTQ0IDMyLjAzMiAxMTYuMDc2IDMxLjU2NCAxMTcuNDI4IDMwLjYyOEMxMTguNzggMjkuNjU3MyAxMTkuNDU2IDI4LjIxODcgMTE5LjQ1NiAyNi4zMTJDMTE5LjQ1NiAyNC40MDUzIDExOC43OCAyMy4wNTMzIDExNy40MjggMjIuMjU2QzExNi4wNzYgMjEuNDU4NyAxMTMuOTQ0IDIxLjA2IDExMS4wMzIgMjEuMDZIOTkuNTRWMTYuNjRIMTEwLjgyNEMxMTUuNDM1IDE2LjY0IDExOC45MzYgMTcuNDAyNyAxMjEuMzI4IDE4LjkyOEMxMjMuNzIgMjAuNDE4NyAxMjQuOTE2IDIyLjc3NiAxMjQuOTE2IDI2QzEyNC45MTYgMjcuMzUyIDEyNC42OTEgMjguNTMwNyAxMjQuMjQgMjkuNTM2QzEyMy44MjQgMzAuNTQxMyAxMjMuMjE3IDMxLjM5MDcgMTIyLjQyIDMyLjA4NEMxMjEuNjU3IDMyLjc3NzMgMTIwLjczOSAzMy4zNDkzIDExOS42NjQgMzMuOEMxMTguNjI0IDM0LjIxNiAxMTcuNDYzIDM0LjUyOCAxMTYuMTggMzQuNzM2QzExNC44OTcgMzQuOTA5MyAxMTMuNTQ1IDM0Ljk5NiAxMTIuMTI0IDM0Ljk5Nkg5OS41NFpNMTQ0LjcyMSA1Mi42MjRDMTQwLjUyNiA1Mi42MjQgMTM3LjI2OCA1MS40OCAxMzQuOTQ1IDQ5LjE5MkMxMzIuNjIyIDQ2Ljg2OTMgMTMxLjQ2MSA0My42NDUzIDEzMS40NjEgMzkuNTJDMTMxLjQ2MSAzNi42NzczIDEzMi4wMTYgMzQuMTk4NyAxMzMuMTI1IDMyLjA4NEMxMzQuMjM0IDI5Ljk2OTMgMTM1Ljc2IDI4LjMyMjcgMTM3LjcwMSAyNy4xNDRDMTM5LjY3NyAyNS45NjUzIDE0MS45NDggMjUuMzc2IDE0NC41MTMgMjUuMzc2QzE0Ni42NjIgMjUuMzc2IDE0OC41IDI1Ljc1NzMgMTUwLjAyNSAyNi41MkMxNTEuNTg1IDI3LjI4MjcgMTUyLjc2NCAyOC4zMDUzIDE1My41NjEgMjkuNTg4QzE1NC4zOTMgMzAuODcwNyAxNTQuODA5IDMyLjI3NDcgMTU0LjgwOSAzMy44QzE1NC44MDkgMzUuMjU2IDE1NC40NDUgMzYuNDg2NyAxNTMuNzE3IDM3LjQ5MkMxNTIuOTg5IDM4LjQ2MjcgMTUxLjk2NiAzOS4yMjUzIDE1MC42NDkgMzkuNzhDMTQ5LjMzMiA0MC4zMzQ3IDE0Ny44MDYgNDAuNjk4NyAxNDYuMDczIDQwLjg3MkMxNDQuMzc0IDQxLjAxMDcgMTQyLjU1NCA0MC45NzYgMTQwLjYxMyA0MC43NjhDMTM4LjY3MiA0MC41NiAxMzYuNjc4IDQwLjE5NiAxMzQuNjMzIDM5LjY3NlYzNi40QzEzNi41NzQgMzYuODg1MyAxMzguNDQ2IDM3LjIxNDcgMTQwLjI0OSAzNy4zODhDMTQyLjA1MiAzNy41MjY3IDE0My42NjQgMzcuNTA5MyAxNDUuMDg1IDM3LjMzNkMxNDYuNTQxIDM3LjEyOCAxNDcuNjg1IDM2LjcxMiAxNDguNTE3IDM2LjA4OEMxNDkuMzg0IDM1LjQ2NCAxNDkuODE3IDM0LjU5NzMgMTQ5LjgxNyAzMy40ODhDMTQ5LjgxNyAzMi4zNDQgMTQ5LjM0OSAzMS4zNTYgMTQ4LjQxMyAzMC41MjRDMTQ3LjUxMiAyOS42NTczIDE0Ni4xOTQgMjkuMjI0IDE0NC40NjEgMjkuMjI0QzE0Mi45MzYgMjkuMjI0IDE0MS41NjYgMjkuNjIyNyAxNDAuMzUzIDMwLjQyQzEzOS4xNzQgMzEuMTgyNyAxMzguMjM4IDMyLjMwOTMgMTM3LjU0NSAzMy44QzEzNi44NTIgMzUuMjkwNyAxMzYuNTA1IDM3LjA5MzMgMTM2LjUwNSAzOS4yMDhDMTM2LjUwNSA0MS4yNTMzIDEzNi44MzQgNDIuOTY5MyAxMzcuNDkzIDQ0LjM1NkMxMzguMTUyIDQ1Ljc0MjcgMTM5LjEyMiA0Ni44IDE0MC40MDUgNDcuNTI4QzE0MS42ODggNDguMjU2IDE0My4zMTcgNDguNjIgMTQ1LjI5MyA0OC42MkMxNDYuNzQ5IDQ4LjYyIDE0OC4yMjIgNDguNDI5MyAxNDkuNzEzIDQ4LjA0OEMxNTEuMjA0IDQ3LjY2NjcgMTUyLjY3NyA0Ny4wOTQ3IDE1NC4xMzMgNDYuMzMyVjUwLjEyOEMxNTMuMDI0IDUwLjc4NjcgMTUxLjY4OSA1MS4zNzYgMTUwLjEyOSA1MS44OTZDMTQ4LjU2OSA1Mi4zODEzIDE0Ni43NjYgNTIuNjI0IDE0NC43MjEgNTIuNjI0Wk0xODEuNDU3IDUySDE3Ni41MTdDMTc2LjI3NCA1MS40OCAxNzYuMDY2IDUwLjcxNzMgMTc1Ljg5MyA0OS43MTJDMTc1Ljc1NCA0OC43MDY3IDE3NS42ODUgNDcuNjMyIDE3NS42ODUgNDYuNDg4TDE3NS4zMjEgNDUuMjkyVjMzLjg1MkMxNzUuMzIxIDMyLjE4OCAxNzQuODM2IDMxLjA2MTMgMTczLjg2NSAzMC40NzJDMTcyLjg5NCAyOS44NDggMTcxLjYyOSAyOS41MzYgMTcwLjA2OSAyOS41MzZDMTY4LjY0OCAyOS41MzYgMTY3LjUwNCAyOS43MDkzIDE2Ni42MzcgMzAuMDU2QzE2NS44MDUgMzAuNDAyNyAxNjUuMTI5IDMwLjgxODcgMTY0LjYwOSAzMS4zMDRDMTY0LjA4OSAzMS43NTQ3IDE2My42MDQgMzIuMTUzMyAxNjMuMTUzIDMyLjVDMTYyLjczNyAzMi44NDY3IDE2Mi4yNTIgMzMuMDIgMTYxLjY5NyAzMy4wMkMxNjEuMDczIDMzLjAyIDE2MC41NyAzMi44NjQgMTYwLjE4OSAzMi41NTJDMTU5Ljg0MiAzMi4yMDUzIDE1OS42NjkgMzEuNzIgMTU5LjY2OSAzMS4wOTZDMTU5LjY2OSAzMC42NDUzIDE1OS43NzMgMzAuMTc3MyAxNTkuOTgxIDI5LjY5MkMxNjAuMjI0IDI5LjIwNjcgMTYwLjYyMiAyOC43MjEzIDE2MS4xNzcgMjguMjM2QzE2My4xNTMgMjYuMzI5MyAxNjYuMTE3IDI1LjM3NiAxNzAuMDY5IDI1LjM3NkMxNzIuMTQ5IDI1LjM3NiAxNzMuOTM0IDI1LjY1MzMgMTc1LjQyNSAyNi4yMDhDMTc2Ljk1IDI2Ljc2MjcgMTc4LjEyOSAyNy42OTg3IDE3OC45NjEgMjkuMDE2QzE3OS44MjggMzAuMzMzMyAxODAuMjYxIDMyLjA2NjcgMTgwLjI2MSAzNC4yMTZWNDQuMzU2QzE4MC4yNjEgNDUuOTg1MyAxODAuMzY1IDQ3LjQ1ODcgMTgwLjU3MyA0OC43NzZDMTgwLjgxNiA1MC4wOTMzIDE4MS4xMSA1MS4xNjggMTgxLjQ1NyA1MlpNMTY2Ljk0OSA1Mi42MjRDMTY0LjQ4OCA1Mi42MjQgMTYyLjUxMiA1MS45NjUzIDE2MS4wMjEgNTAuNjQ4QzE1OS41MyA0OS4zMzA3IDE1OC43ODUgNDcuNTI4IDE1OC43ODUgNDUuMjRDMTU4Ljc4NSA0My4xNiAxNTkuNDQ0IDQxLjUzMDcgMTYwLjc2MSA0MC4zNTJDMTYyLjA3OCAzOS4xMzg3IDE2NC4wMzcgMzguMjcyIDE2Ni42MzcgMzcuNzUyTDE3MS4zNjkgMzYuODY4QzE3Mi45OTggMzYuNTIxMyAxNzQuMDU2IDM2LjE1NzMgMTc0LjU0MSAzNS43NzZDMTc1LjA2MSAzNS4zOTQ3IDE3NS4zMjEgMzQuODA1MyAxNzUuMzIxIDM0LjAwOFYzOC40OEMxNzUuMDc4IDM4LjcyMjcgMTc0LjY5NyAzOC45NjUzIDE3NC4xNzcgMzkuMjA4QzE3My42OTIgMzkuNDUwNyAxNzIuOTQ2IDM5LjY5MzMgMTcxLjk0MSAzOS45MzZMMTY4LjM1MyA0MC42NjRDMTY3LjA3IDQwLjkwNjcgMTY2LjAxMyA0MS4zNTczIDE2NS4xODEgNDIuMDE2QzE2NC4zODQgNDIuNjQgMTYzLjk4NSA0My41OTMzIDE2My45ODUgNDQuODc2QzE2My45ODUgNDYuMTI0IDE2NC4zODQgNDcuMTEyIDE2NS4xODEgNDcuODRDMTY2LjAxMyA0OC41MzMzIDE2Ny4xMDUgNDguODggMTY4LjQ1NyA0OC44OEMxNjkuNjM2IDQ4Ljg4IDE3MC43NDUgNDguNjAyNyAxNzEuNzg1IDQ4LjA0OEMxNzIuODYgNDcuNDkzMyAxNzMuNzA5IDQ2LjY3ODcgMTc0LjMzMyA0NS42MDRDMTc0Ljk5MiA0NC40OTQ3IDE3NS4zMjEgNDMuMjEyIDE3NS4zMjEgNDEuNzU2TDE3Ni4yNTcgNDYuMDcyQzE3NS40OTQgNDguMzYgMTc0LjI2NCA1MC4wMjQgMTcyLjU2NSA1MS4wNjRDMTcwLjg2NiA1Mi4xMDQgMTY4Ljk5NCA1Mi42MjQgMTY2Ljk0OSA1Mi42MjRaTTE4Ny43NzIgNTJWMjZIMTkyLjY2VjUySDE4Ny43NzJaTTE5Mi42NiAzOC4wMTJMMTkxLjU2OCAzMi4zNDRDMTkyLjQgMjkuOTUyIDE5My40NzQgMjguMjAxMyAxOTQuNzkyIDI3LjA5MkMxOTYuMTA5IDI1Ljk0OCAxOTcuNTEzIDI1LjM3NiAxOTkuMDA0IDI1LjM3NkMxOTkuNzMyIDI1LjM3NiAyMDAuMzczIDI1LjQ5NzMgMjAwLjkyOCAyNS43NEMyMDEuNTE3IDI1Ljk4MjcgMjAxLjk2OCAyNi4zNDY3IDIwMi4yOCAyNi44MzJDMjAyLjYyNiAyNy4yODI3IDIwMi44IDI3Ljg1NDcgMjAyLjggMjguNTQ4QzIwMi44IDI5LjM4IDIwMi41NzQgMzAuMDA0IDIwMi4xMjQgMzAuNDJDMjAxLjY3MyAzMC44MzYgMjAxLjEwMSAzMS4wNDQgMjAwLjQwOCAzMS4wNDRDMTk5Ljg4OCAzMS4wNDQgMTk5LjQwMiAzMC45NzQ3IDE5OC45NTIgMzAuODM2QzE5OC41MDEgMzAuNjYyNyAxOTguMDMzIDMwLjU3NiAxOTcuNTQ4IDMwLjU3NkMxOTYuMDkyIDMwLjU3NiAxOTQuOTEzIDMxLjI2OTMgMTk0LjAxMiAzMi42NTZDMTkzLjExIDM0LjA0MjcgMTkyLjY2IDM1LjgyOCAxOTIuNjYgMzguMDEyWk0yMTAuMDkzIDM3Ljg1NlYzMy4yOEgyMjEuMjIxQzIyNC4zMDcgMzMuMjggMjI2LjU2IDMyLjc0MjcgMjI3Ljk4MSAzMS42NjhDMjI5LjQwMyAzMC41NTg3IDIzMC4xMTMgMjkuMDE2IDIzMC4xMTMgMjcuMDRDMjMwLjExMyAyNS4wOTg3IDIyOS40MDMgMjMuNjQyNyAyMjcuOTgxIDIyLjY3MkMyMjYuNTk1IDIxLjcwMTMgMjI0LjM0MSAyMS4yMTYgMjIxLjIyMSAyMS4yMTZIMjEwLjA5M1YxNi42NEgyMjEuNDgxQzIyNi4zIDE2LjY0IDIyOS44NzEgMTcuNTQxMyAyMzIuMTkzIDE5LjM0NEMyMzQuNTE2IDIxLjExMiAyMzUuNjc3IDIzLjY0MjcgMjM1LjY3NyAyNi45MzZDMjM1LjY3NyAyOS4xMiAyMzUuMTU3IDMxLjA0NCAyMzQuMTE3IDMyLjcwOEMyMzMuMDc3IDM0LjMzNzMgMjMxLjUgMzUuNjAyNyAyMjkuMzg1IDM2LjUwNEMyMjcuMzA1IDM3LjQwNTMgMjI0LjcyMyAzNy44NTYgMjIxLjYzNyAzNy44NTZIMjEwLjA5M1pNMjA3LjE4MSA1MlYxNi42NEgyMTIuNDg1VjUySDIwNy4xODFaTTI2MS4yODUgNTJIMjU2LjM0NUMyNTYuMTAzIDUxLjQ4IDI1NS44OTUgNTAuNzE3MyAyNTUuNzIxIDQ5LjcxMkMyNTUuNTgzIDQ4LjcwNjcgMjU1LjUxMyA0Ny42MzIgMjU1LjUxMyA0Ni40ODhMMjU1LjE0OSA0NS4yOTJWMzMuODUyQzI1NS4xNDkgMzIuMTg4IDI1NC42NjQgMzEuMDYxMyAyNTMuNjkzIDMwLjQ3MkMyNTIuNzIzIDI5Ljg0OCAyNTEuNDU3IDI5LjUzNiAyNDkuODk3IDI5LjUzNkMyNDguNDc2IDI5LjUzNiAyNDcuMzMyIDI5LjcwOTMgMjQ2LjQ2NSAzMC4wNTZDMjQ1LjYzMyAzMC40MDI3IDI0NC45NTcgMzAuODE4NyAyNDQuNDM3IDMxLjMwNEMyNDMuOTE3IDMxLjc1NDcgMjQzLjQzMiAzMi4xNTMzIDI0Mi45ODEgMzIuNUMyNDIuNTY1IDMyLjg0NjcgMjQyLjA4IDMzLjAyIDI0MS41MjUgMzMuMDJDMjQwLjkwMSAzMy4wMiAyNDAuMzk5IDMyLjg2NCAyNDAuMDE3IDMyLjU1MkMyMzkuNjcxIDMyLjIwNTMgMjM5LjQ5NyAzMS43MiAyMzkuNDk3IDMxLjA5NkMyMzkuNDk3IDMwLjY0NTMgMjM5LjYwMSAzMC4xNzczIDIzOS44MDkgMjkuNjkyQzI0MC4wNTIgMjkuMjA2NyAyNDAuNDUxIDI4LjcyMTMgMjQxLjAwNSAyOC4yMzZDMjQyLjk4MSAyNi4zMjkzIDI0NS45NDUgMjUuMzc2IDI0OS44OTcgMjUuMzc2QzI1MS45NzcgMjUuMzc2IDI1My43NjMgMjUuNjUzMyAyNTUuMjUzIDI2LjIwOEMyNTYuNzc5IDI2Ljc2MjcgMjU3Ljk1NyAyNy42OTg3IDI1OC43ODkgMjkuMDE2QzI1OS42NTYgMzAuMzMzMyAyNjAuMDg5IDMyLjA2NjcgMjYwLjA4OSAzNC4yMTZWNDQuMzU2QzI2MC4wODkgNDUuOTg1MyAyNjAuMTkzIDQ3LjQ1ODcgMjYwLjQwMSA0OC43NzZDMjYwLjY0NCA1MC4wOTMzIDI2MC45MzkgNTEuMTY4IDI2MS4yODUgNTJaTTI0Ni43NzcgNTIuNjI0QzI0NC4zMTYgNTIuNjI0IDI0Mi4zNCA1MS45NjUzIDI0MC44NDkgNTAuNjQ4QzIzOS4zNTkgNDkuMzMwNyAyMzguNjEzIDQ3LjUyOCAyMzguNjEzIDQ1LjI0QzIzOC42MTMgNDMuMTYgMjM5LjI3MiA0MS41MzA3IDI0MC41ODkgNDAuMzUyQzI0MS45MDcgMzkuMTM4NyAyNDMuODY1IDM4LjI3MiAyNDYuNDY1IDM3Ljc1MkwyNTEuMTk3IDM2Ljg2OEMyNTIuODI3IDM2LjUyMTMgMjUzLjg4NCAzNi4xNTczIDI1NC4zNjkgMzUuNzc2QzI1NC44ODkgMzUuMzk0NyAyNTUuMTQ5IDM0LjgwNTMgMjU1LjE0OSAzNC4wMDhWMzguNDhDMjU0LjkwNyAzOC43MjI3IDI1NC41MjUgMzguOTY1MyAyNTQuMDA1IDM5LjIwOEMyNTMuNTIgMzkuNDUwNyAyNTIuNzc1IDM5LjY5MzMgMjUxLjc2OSAzOS45MzZMMjQ4LjE4MSA0MC42NjRDMjQ2Ljg5OSA0MC45MDY3IDI0NS44NDEgNDEuMzU3MyAyNDUuMDA5IDQyLjAxNkMyNDQuMjEyIDQyLjY0IDI0My44MTMgNDMuNTkzMyAyNDMuODEzIDQ0Ljg3NkMyNDMuODEzIDQ2LjEyNCAyNDQuMjEyIDQ3LjExMiAyNDUuMDA5IDQ3Ljg0QzI0NS44NDEgNDguNTMzMyAyNDYuOTMzIDQ4Ljg4IDI0OC4yODUgNDguODhDMjQ5LjQ2NCA0OC44OCAyNTAuNTczIDQ4LjYwMjcgMjUxLjYxMyA0OC4wNDhDMjUyLjY4OCA0Ny40OTMzIDI1My41MzcgNDYuNjc4NyAyNTQuMTYxIDQ1LjYwNEMyNTQuODIgNDQuNDk0NyAyNTUuMTQ5IDQzLjIxMiAyNTUuMTQ5IDQxLjc1NkwyNTYuMDg1IDQ2LjA3MkMyNTUuMzIzIDQ4LjM2IDI1NC4wOTIgNTAuMDI0IDI1Mi4zOTMgNTEuMDY0QzI1MC42OTUgNTIuMTA0IDI0OC44MjMgNTIuNjI0IDI0Ni43NzcgNTIuNjI0Wk0yNzIuNTM2IDUyTDI4MC4yODQgMjguNDQ0QzI4MC41OTYgMjcuNDA0IDI4MS4wMTIgMjYuNjQxMyAyODEuNTMyIDI2LjE1NkMyODIuMDUyIDI1LjYzNiAyODIuNzExIDI1LjM3NiAyODMuNTA4IDI1LjM3NkMyODQuMzA2IDI1LjM3NiAyODQuOTQ3IDI1LjYzNiAyODUuNDMyIDI2LjE1NkMyODUuOTUyIDI2LjY0MTMgMjg2LjM4NiAyNy40MDQgMjg2LjczMiAyOC40NDRMMjk0LjQyOCA1MkgyOTAuMTEyTDI4Mi42MjQgMjkuNDg0SDI4NC4zOTJMMjc2Ljg1MiA1MkgyNzIuNTM2Wk0yNzEuODA4IDUyTDI2NC4wMDggMjZIMjY5LjMxMkwyNzUuNzYgNTJIMjcxLjgwOFpNMjkxLjIwNCA1MkwyOTcuNzA0IDI2SDMwMy4wMDhMMjk1LjIwOCA1MkgyOTEuMjA0Wk0zMTUuMzE2IDUyLjYyNEMzMTMuMjcxIDUyLjYyNCAzMTEuNDUxIDUyLjM4MTMgMzA5Ljg1NiA1MS44OTZDMzA4LjI2MiA1MS4zNzYgMzA2LjkyNyA1MC43NjkzIDMwNS44NTIgNTAuMDc2VjQ1LjYwNEMzMDcuNDQ3IDQ2Ljc0OCAzMDkuMDU5IDQ3LjYxNDcgMzEwLjY4OCA0OC4yMDRDMzEyLjM1MiA0OC43OTMzIDMxMy45NDcgNDkuMDg4IDMxNS40NzIgNDkuMDg4QzMxNy4zNDQgNDkuMDg4IDMxOC42OTYgNDguNzI0IDMxOS41MjggNDcuOTk2QzMyMC4zNiA0Ny4yNjggMzIwLjc3NiA0Ni40MDEzIDMyMC43NzYgNDUuMzk2QzMyMC43NzYgNDQuNDI1MyAzMjAuNDEyIDQzLjY2MjcgMzE5LjY4NCA0My4xMDhDMzE4Ljk5MSA0Mi41MTg3IDMxOC4wNzIgNDIuMDMzMyAzMTYuOTI4IDQxLjY1MkMzMTUuODE5IDQxLjI3MDcgMzE0LjY0IDQwLjkwNjcgMzEzLjM5MiA0MC41NkMzMTIuMTQ0IDQwLjIxMzMgMzEwLjk2NiAzOS43OCAzMDkuODU2IDM5LjI2QzMwOC43NDcgMzguNzA1MyAzMDcuODI4IDM3Ljk2IDMwNy4xIDM3LjAyNEMzMDYuMzcyIDM2LjA4OCAzMDYuMDA4IDM0Ljg1NzMgMzA2LjAwOCAzMy4zMzJDMzA2LjAwOCAzMS44NDEzIDMwNi4zOSAzMC41MDY3IDMwNy4xNTIgMjkuMzI4QzMwNy45MTUgMjguMTE0NyAzMDkuMDQyIDI3LjE2MTMgMzEwLjUzMiAyNi40NjhDMzEyLjA1OCAyNS43NCAzMTMuOTMgMjUuMzc2IDMxNi4xNDggMjUuMzc2QzMxNy45NTEgMjUuMzc2IDMxOS41MTEgMjUuNjAxMyAzMjAuODI4IDI2LjA1MkMzMjIuMTggMjYuNTAyNyAzMjMuMjM4IDI3LjEwOTMgMzI0IDI3Ljg3MkMzMjQuNzYzIDI4LjYzNDcgMzI1LjE0NCAyOS40ODQgMzI1LjE0NCAzMC40MkMzMjUuMTQ0IDMxLjA0NCAzMjQuOTcxIDMxLjUyOTMgMzI0LjYyNCAzMS44NzZDMzI0LjMxMiAzMi4xODggMzIzLjg3OSAzMi4zNDQgMzIzLjMyNCAzMi4zNDRDMzIyLjc3IDMyLjM0NCAzMjIuMjg0IDMyLjE3MDcgMzIxLjg2OCAzMS44MjRDMzIxLjQ4NyAzMS40NzczIDMyMS4wNzEgMzEuMDc4NyAzMjAuNjIgMzAuNjI4QzMyMC4xNyAzMC4xNzczIDMxOS41OCAyOS43Nzg3IDMxOC44NTIgMjkuNDMyQzMxOC4xMjQgMjkuMDg1MyAzMTcuMTcxIDI4LjkxMiAzMTUuOTkyIDI4LjkxMkMzMTQuMjk0IDI4LjkxMiAzMTMuMDQ2IDI5LjI5MzMgMzEyLjI0OCAzMC4wNTZDMzExLjQ1MSAzMC44MTg3IDMxMS4wNTIgMzEuNjg1MyAzMTEuMDUyIDMyLjY1NkMzMTEuMDUyIDMzLjU5MiAzMTEuMzk5IDM0LjM1NDcgMzEyLjA5MiAzNC45NDRDMzEyLjgyIDM1LjQ5ODcgMzEzLjczOSAzNS45NjY3IDMxNC44NDggMzYuMzQ4QzMxNS45OTIgMzYuNjk0NyAzMTcuMTg4IDM3LjA0MTMgMzE4LjQzNiAzNy4zODhDMzE5LjY4NCAzNy43MzQ3IDMyMC44NjMgMzguMjAyNyAzMjEuOTcyIDM4Ljc5MkMzMjMuMTE2IDM5LjM0NjcgMzI0LjAzNSA0MC4xMDkzIDMyNC43MjggNDEuMDhDMzI1LjQ1NiA0Mi4wMTYgMzI1LjgyIDQzLjI4MTMgMzI1LjgyIDQ0Ljg3NkMzMjUuODIgNDYuMjk3MyAzMjUuNDM5IDQ3LjYxNDcgMzI0LjY3NiA0OC44MjhDMzIzLjkxNCA1MC4wMDY3IDMyMi43NTIgNTAuOTQyNyAzMjEuMTkyIDUxLjYzNkMzMTkuNjY3IDUyLjI5NDcgMzE3LjcwOCA1Mi42MjQgMzE1LjMxNiA1Mi42MjRaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTQ4LjA5MSA3OVY2Ny4wMkgxNDMuODMxVjY1LjI4SDE1NC40MzFWNjcuMDJIMTUwLjE3MVY3OUgxNDguMDkxWk0xNjIuMjYzIDc5VjY1LjI4SDE3MS4yMjNMMTcwLjk0MyA2Ni45OEgxNjQuMzYzVjcxLjE2SDE3MC4zMjNWNzIuODJIMTY0LjM2M1Y3Ny4yNkgxNzEuMDYzTDE3MS4zNDMgNzlIMTYyLjI2M1pNMTg4LjgzNiA3OS4xQzE4OC41MDIgNzkuMSAxODguMTgyIDc5LjAzMzMgMTg3Ljg3NiA3OC45QzE4Ny41NjkgNzguNzY2NyAxODcuMzIyIDc4LjUxMzMgMTg3LjEzNiA3OC4xNEMxODYuOTQ5IDc3Ljc2NjcgMTg2Ljg1NiA3Ny4yMjY3IDE4Ni44NTYgNzYuNTJDMTg2Ljg1NiA3NS44NTMzIDE4Ni43ODIgNzUuMzA2NyAxODYuNjM2IDc0Ljg4QzE4Ni40ODkgNzQuNDUzMyAxODYuMjk2IDc0LjEyIDE4Ni4wNTYgNzMuODhDMTg1LjgyOSA3My42MjY3IDE4NS41ODIgNzMuNDQ2NyAxODUuMzE2IDczLjM0QzE4NS4wNDkgNzMuMjMzMyAxODQuNzg5IDczLjE4IDE4NC41MzYgNzMuMThIMTgxLjQ3NlY3OUgxNzkuMzk2VjY1LjI4SDE4NS4zNTZDMTg2LjA3NiA2NS4yOCAxODYuNzIyIDY1LjQyNjcgMTg3LjI5NiA2NS43MkMxODcuODgyIDY2LjAxMzMgMTg4LjM0MiA2Ni40MjY3IDE4OC42NzYgNjYuOTZDMTg5LjAyMiA2Ny40OTMzIDE4OS4xOTYgNjguMTI2NyAxODkuMTk2IDY4Ljg2QzE4OS4xOTYgNjkuNyAxODguOTc2IDcwLjQzMzMgMTg4LjUzNiA3MS4wNkMxODguMDk2IDcxLjY3MzMgMTg3LjUxNiA3Mi4wNTMzIDE4Ni43OTYgNzIuMlY3Mi4zQzE4Ny4yNzYgNzIuNDMzMyAxODcuNjY5IDcyLjY2NjcgMTg3Ljk3NiA3M0MxODguMjk2IDczLjMzMzMgMTg4LjUzNiA3My43NDY3IDE4OC42OTYgNzQuMjRDMTg4Ljg1NiA3NC43MiAxODguOTM2IDc1LjI0IDE4OC45MzYgNzUuOEMxODguOTM2IDc2LjcwNjcgMTg5LjAwOSA3Ny4zNCAxODkuMTU2IDc3LjdDMTg5LjMwMiA3OC4wNiAxODkuNTY5IDc4LjI5MzMgMTg5Ljk1NiA3OC40Vjc4LjkyQzE4OS44MjIgNzguOTg2NyAxODkuNjU2IDc5LjAzMzMgMTg5LjQ1NiA3OS4wNkMxODkuMjY5IDc5LjA4NjcgMTg5LjA2MiA3OS4xIDE4OC44MzYgNzkuMVpNMTgxLjQ3NiA3MS41SDE4NC43NzZDMTg1LjUzNiA3MS41IDE4Ni4xMTYgNzEuMjggMTg2LjUxNiA3MC44NEMxODYuOTI5IDcwLjM4NjcgMTg3LjEzNiA2OS44MiAxODcuMTM2IDY5LjE0QzE4Ny4xMzYgNjguNDYgMTg2LjkzNiA2Ny45MjY3IDE4Ni41MzYgNjcuNTRDMTg2LjE0OSA2Ny4xNTMzIDE4NS42MDIgNjYuOTYgMTg0Ljg5NiA2Ni45NkgxODEuNDc2VjcxLjVaTTE5Ni41MDggNzlWNjUuMjhIMTk5LjM0OEwyMDEuMjQ4IDc2LjA4SDIwMS4zMjhMMjAzLjMwOCA2NS4yOEgyMDYuMTA4Vjc5SDIwNC4yMjhWNjcuNzJIMjA0LjEyOEwyMDIuMTA4IDc5SDIwMC4yNDhMMTk4LjI4OCA2Ny43MkgxOTguMTg4Vjc5SDE5Ni41MDhaTTIxNC44NCA3OVY3Ny4zNkgyMTcuNjRWNjYuOTJIMjE0Ljg0VjY1LjI4SDIyMi41NlY2Ni45MkgyMTkuNzZWNzcuMzZIMjIyLjU2Vjc5SDIxNC44NFpNMjMxLjU3MiA3OVY2NS4yOEgyMzMuNjUyTDIzNy44NTIgNzMuNThMMjM4LjU5MiA3NS4xOEgyMzguNjcyVjY1LjI4SDI0MC42MzJWNzlIMjM4LjUzMkwyMzQuMTkyIDcwLjUyTDIzMy41OTIgNjkuMTRMMjMzLjUxMiA2OS4xNlY3OUgyMzEuNTcyWk0yNDcuNzQ0IDc5TDI1Mi4yMDQgNjUuMjhIMjU0Ljc0NEwyNTkuMjI0IDc5SDI1Ny4wNjRMMjUzLjQ0NCA2Ny4zNEgyNTMuMzY0TDI0OS44MjQgNzlIMjQ3Ljc0NFpNMjQ5Ljk4NCA3NS45MlY3NC4zSDI1Ni45MDRWNzUuOTJIMjQ5Ljk4NFpNMjY2Ljk1NyA3OVY2NS4yOEgyNjkuMDU3Vjc3LjI0SDI3NS4yNzdMMjc1LjU1NyA3OUgyNjYuOTU3WiIgZmlsbD0id2hpdGUiLz4KPHBhdGggZD0iTTk2IDcyLjgyMTRMMTM0IDY4Vjc3TDk2IDcyLjgyMTRaIiBmaWxsPSIjM0I4MkY2Ii8+CjxwYXRoIGQ9Ik0zMjUgNzIuODIxNEwyODcgNjhWNzdMMzI1IDcyLjgyMTRaIiBmaWxsPSIjM0I4MkY2Ii8+Cjwvc3ZnPgo=" alt="Bearpaws">
++</footer>
++</body></html>
+\ No newline at end of file
+diff --git a/out/2026-08-19_morning_map.png b/out/2026-08-19_morning_map.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a4bd565b98aef5eb69e2b4cab7790ca4fad3510
+GIT binary patch
+literal 57445
+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
+VhAgp!{xXD;iZ^Pn%jGRX{ttJ+t*-z8
+
+literal 0
+HcmV?d00001
+
+diff --git a/package.json b/package.json
+new file mode 100644
+index 0000000..d0abaec
+--- /dev/null
++++ b/package.json
+@@ -0,0 +1,16 @@
++{
++  "name": "bearpaws-twitter-post",
++  "version": "0.2.0",
++  "private": true,
++  "description": "Bearpaws X post generator — spec, humanizer, validator.",
++  "engines": { "node": ">=18" },
++  "scripts": {
++    "test": "node fixtures/negative_tests.js",
++    "validate": "node tools/validator/validate.js",
++    "score": "node tools/humanizer/cli.js score",
++    "fixture": "node fixtures/build_card.js && node fixtures/render.js && node tools/validator/validate.js --record queue/2026-08-19_morning_map.json --payload fixtures/payload.json"
++  },
++  "devDependencies": {
++    "playwright": "^1.47.0"
++  }
++}
+diff --git a/queue/2026-08-19_morning_map.json b/queue/2026-08-19_morning_map.json
+new file mode 100644
+index 0000000..cf30adb
+--- /dev/null
++++ b/queue/2026-08-19_morning_map.json
+@@ -0,0 +1,49 @@
++{
++  "slot": "morning_map",
++  "post": true,
++  "skip_reason": null,
++  "tweet": {
++    "text": "3,421.8 and 3,402.0 bracket the session. Above 3,421.8 the prior-day high is reference, not resistance; a hold below 3,402.0 puts the weekly open in control. Asia ranged 3,414.0 to 3,399.5. Core PCE 12:30 UTC. $XAUUSD",
++    "char_count": 217,
++    "thread": []
++  },
++  "claims": [
++    {
++      "assertion": "prior day high at 3421.8",
++      "value": 3421.8,
++      "source_field": "market_state.levels[1].price"
++    },
++    {
++      "assertion": "weekly open at 3402.0",
++      "value": 3402,
++      "source_field": "market_state.levels[0].price"
++    },
++    {
++      "assertion": "Asia range high 3414.0",
++      "value": 3414,
++      "source_field": "market_state.asia_range.high"
++    },
++    {
++      "assertion": "Asia range low 3399.5",
++      "value": 3399.5,
++      "source_field": "market_state.asia_range.low"
++    },
++    {
++      "assertion": "Core PCE release time",
++      "value": "2026-08-20T12:30:00Z",
++      "source_field": "calendar[0].time_utc"
++    }
++  ],
++  "references_prior_post_id": null,
++  "risk_flags": [],
++  "humanizer_score": 0,
++  "card": {
++    "template": "levels",
++    "layout_variant": "bracket-split",
++    "html_path": "out/2026-08-19_morning_map.html",
++    "png_path": "out/2026-08-19_morning_map.png",
++    "logo_asset": "bearpaws_logo_white.svg",
++    "design_notes": "paired columns, the two deciding levels as equal heroes with the accent axis between them"
++  },
++  "generated_at": "2026-08-19T23:30:00Z"
++}
+\ No newline at end of file
+diff --git a/tools/.DS_Store b/tools/.DS_Store
+deleted file mode 100644
+index bbc158157cc22cbb8d3210db24bd561b9a32c7e7..0000000000000000000000000000000000000000
+GIT binary patch
+literal 0
+HcmV?d00001
+
+literal 6148
+zcmeHK%}T>S5T0$TZ7o6%DuR~<uLWD7{@^9n`T|Dupi&c4+F+V3{jp#v<fyOU$*1rc
+zym<9_oc*b^w1pmuNST4zZ+3QOH~S^*W&nVdx?TYw3jirpiLo>`Q$&tSosgLEtRgZs
+zM+iPVLls(XZz7r;|B(Ut?$S_)E;PV_k@webx`A+U^uuiie!G*;f3sLTv9g*($t3UW
+zy6D**r_*hhoYsx(T?!GnL)&q${A#a~-8d6r$MM5zOC|VT6+>>X{m>J=lIVtBTjkn%
+zAdOPVZuR^596vZ7<aobOEbQm_(P42gNT)V;_f9S<k3l08FPcn--<^_mgF|>lW6HjQ
+zTETu0jpi_HdQ?M{%VzhfulU;A`_AX-tVnOp$Yy<>m7nZZ7>KZjs||NH@~C7I1H=F^
+zupkD^36sh!Xg->T7$63ghXHv$a8!ww!APSzI<QeC0Ad2&O3;?Igv{XvErXFp96@0^
+z6;Y=$Q(`ckj(%?9EQ66ooes<tAIz-GOohVK>Nr1F;lM17)Di>4z&HbO-ObAT|9p1+
+zKb}NAVt^P}Dh61hY?n*8C3Ck<Y);;_9Q7Vmij0di{-&Uzu40UpSMfHg67+LvAX)|^
+Sjp#w49|1)JHN?Q5GVlZ7vu|Ml
+
+diff --git a/tools/validator/README.md b/tools/validator/README.md
+new file mode 100644
+index 0000000..5276cad
+--- /dev/null
++++ b/tools/validator/README.md
+@@ -0,0 +1,65 @@
++# Validator
++
++Rules 1–20 from `bearpaws_runner_prompt_v2.md`, as code. Dependency-free, Node ≥ 18.
++
++```bash
++node tools/validator/validate.js \
++  --record queue/2026-08-19_morning_map.json \
++  --payload payload.json \
++  [--repo .] [--json]
++```
++
++Exit `0` = safe to post (warnings allowed, read them). Exit `1` = do not post.
++`--json` emits a machine-readable report for the runner to attach to the record.
++
++## The point
++
++The model does not grade itself. Rule 7 recomputes every slot threshold from the
++payload, rule 19 recomputes the post_event pairing and percentile, and rule 17
++re-scores the text through the humanizer rather than trusting `humanizer_score`.
++A record that asserts it cleared the bar and a payload that says otherwise is a
++failure, not a disagreement.
++
++## Rule notes
++
++**2 / 10 — numerals.** Every numeral in the tweet, the thread, and the card must
++resolve to a `claims[]` entry. Structural numerals (`30m`, `4h`, `ATR20`) are
++exempt via a deliberately narrow list at the top of `validate.js`; every
++exemption applied is printed in the report so it stays auditable. Widen that list
++reluctantly — each entry is a hole in the rule.
++
++The card scan covers text nodes, `data-value` attributes, **and CSS `content:`
++strings**. That last one matters: a stylesheet can paint a numeral onto the card
++that never appears in the markup, and a reader screenshots what was rendered.
++
++**11 / 12 — the logo conflict.** `bearpaws_logo_white.svg` contains
++`fill="white"`, which is not one of the four brand tokens. Inline it as markup and
++rule 11 fails; recolor it and rule 12 fails. The card must embed it as a
++`data:image/svg+xml;base64,` URI: rule 11 excises data URIs before scanning for
++color literals, and rule 12 decodes the payload and compares SHA-256 against the
++asset on disk. Both pass, and the file stays self-contained.
++
++**13 — blank detection** is a heuristic: total compressed IDAT bytes below 5000
++for a 1600×900 canvas means almost nothing was drawn. It catches an all-dark
++render, not a subtly broken one. Looking at the PNG is still the runner's job.
++
++**16 — two-sidedness** is a warn-not-fail heuristic, per the spec, *except* that
++a detected one-sided map without `risk_flags: ["one_sided_map"]` is a hard fail.
++The flag is what routes it to manual review, so omitting it is the actual defect.
++
++## Tests
++
++```bash
++npm test
++```
++
++27 negative cases: each mutates the known-good fixture one way and asserts the
++intended rule fires. `npm run fixture` rebuilds the passing example from
++`fixtures/payload.json` (needs `npx playwright install chromium` locally).
++
++## Calibration
++
++`ATR_RANGE_MULT` (0.35), `ATR_PROX_MULT` (0.15), `HUMANIZER_MAX` (30) and
++`SIMILARITY_MAX` (0.85) are the placeholders the spec's open questions flag.
++They live in one block at the top of `validate.js`. Backfill payloads, read the
++skip-rate distribution, then move them.
+diff --git a/tools/validator/validate.js b/tools/validator/validate.js
+new file mode 100644
+index 0000000..a3bdb28
+--- /dev/null
++++ b/tools/validator/validate.js
+@@ -0,0 +1,562 @@
++#!/usr/bin/env node
++/**
++ * Bearpaws X post validator — rules 1-20 from bearpaws_runner_prompt_v2.md.
++ *
++ * Dependency-free. Node >= 16.
++ *
++ *   node tools/validator/validate.js --record queue/2026-08-19_pre_event.json \
++ *                                    --payload payload.json [--repo .] [--json]
++ *
++ * Exit 0 = safe to post (warnings allowed). Exit 1 = do not post.
++ *
++ * The model does not get to grade itself. Every threshold, percentile and
++ * numeral is recomputed here from the payload, never read from the record.
++ */
++
++'use strict';
++const fs = require('fs');
++const path = require('path');
++const crypto = require('crypto');
++const { execFileSync } = require('child_process');
++
++/* ------------------------------- config ---------------------------------- */
++
++const TOKENS = ['#0b0f19', '#3b82f6', '#e8edf7', '#64748b'];
++
++const CANONICAL_DECLS = [
++  '--bp-surface: #0B0F19;',
++  '--bp-accent: #3B82F6;',
++  '--bp-text: #E8EDF7;',
++  '--bp-muted: #64748B;',
++];
++
++const FLOAT_TOL = 0.01;
++const SIMILARITY_MAX = 0.85;
++const HUMANIZER_MAX = 30;
++const ATR_RANGE_MULT = 0.35;   // london_open: asia range vs ATR20
++const ATR_PROX_MULT = 0.15;    // london_open: level interaction distance
++const ERE_MIN_N = 20;
++const PRE_EVENT_WINDOW_MIN = 90;
++
++/* Numerals that are structural rather than data, and so need no claim.
++ * Deliberately narrow — every exemption is a hole in rule 2. Exemptions are
++ * listed in the report so they stay auditable. */
++const STRUCTURAL_NUMERAL = [
++  /\b\d+(?:m|h|d|min|hr|hrs)\b/gi,   // "30m move", "4h persistence"
++  /\bATR\d+\b/gi,                    // "ATR20"
++];
++
++const BANNED = [
++  // entries, stops, targets
++  [/\b(?:entry|entries)\s*(?:@|at|:)/i, 'entry level'],
++  [/\b(?:stop[\s-]?loss|take[\s-]?profit|\bSL\b|\bTP\b)/i, 'stop/target'],
++  [/\btarget(?:s|ing)?\b/i, 'price target'],
++  // prediction
++  [/\bwill\s+(?:hit|reach|break|test|go|move|rally|fall|drop)\b/i, 'prediction verb'],
++  [/\b(?:heading|headed)\s+(?:to|for)\b/i, 'prediction verb'],
++  // trader directives
++  [/\b(?:buy|sell|go long|go short|fade|enter|exit|add|size up|size down|take profit|wait for the retrace)\b/i, 'trader directive'],
++  // performance claims
++  [/\b\d{1,3}(?:\.\d+)?\s*%\s*(?:win|accuracy|hit)\s*rate\b/i, 'performance claim'],
++  [/\bwin\s*rate\b/i, 'performance claim'],
++];
++
++const MAGNITUDE_ADJ = /\b(?:sharp(?:ly)?|violent(?:ly)?|muted|massive|huge|big move|explosive|brutal)\b/i;
++
++const TIER1 = [
++  'delve', 'tapestry', 'landscape', 'vibrant', 'crucial', 'robust', 'seamless',
++  'pivotal', 'groundbreaking', 'leverage', 'transformative', 'paramount',
++  'showcase', 'unpack', 'deep dive', 'actionable', 'impactful', 'realm',
++  'myriad', 'cornerstone', 'testament', 'evolving', 'reshaping',
++];
++
++const FILLER = ['in order to', 'due to the fact that', "it's worth noting", 'it is worth noting'];
++
++const NAMED_COLORS = [
++  'white', 'black', 'red', 'green', 'blue', 'yellow', 'orange', 'purple', 'gray',
++  'grey', 'silver', 'navy', 'teal', 'lime', 'aqua', 'fuchsia', 'maroon', 'olive',
++  'crimson', 'gold', 'pink', 'brown', 'cyan', 'magenta', 'beige', 'ivory',
++];
++
++/* ------------------------------ reporting -------------------------------- */
++
++const results = [];
++const rule = (n, title) => ({
++  pass: (m) => results.push({ n, title, status: 'pass', message: m || '' }),
++  fail: (m) => results.push({ n, title, status: 'FAIL', message: m }),
++  warn: (m) => results.push({ n, title, status: 'warn', message: m }),
++  skip: (m) => results.push({ n, title, status: 'skip', message: m }),
++});
++
++/* ------------------------------- helpers --------------------------------- */
++
++function readJSON(p) {
++  try { return JSON.parse(fs.readFileSync(p, 'utf8')); }
++  catch (e) { console.error(`cannot read JSON at ${p}: ${e.message}`); process.exit(2); }
++}
++
++/** Resolve "market_state.levels[1].price" against the payload. */
++function resolveField(obj, dotted) {
++  const parts = String(dotted).replace(/\[(\d+)\]/g, '.$1').split('.').filter(Boolean);
++  let cur = obj;
++  for (const part of parts) {
++    if (cur === null || cur === undefined) return undefined;
++    cur = cur[part];
++  }
++  return cur;
++}
++
++/** Numerals in a string, with structural ones removed. Returns {kept, exempt}. */
++function extractNumerals(text) {
++  let masked = String(text);
++  const exempt = [];
++  for (const re of STRUCTURAL_NUMERAL) {
++    masked = masked.replace(re, (m) => { exempt.push(m); return ' '.repeat(m.length); });
++  }
++  masked = masked.replace(/https?:\/\/\S+/g, ' ');   // URLs carry no claims
++  const kept = [];
++  for (const m of masked.matchAll(/\d[\d,]*(?:\.\d+)?/g)) {
++    const v = parseFloat(m[0].replace(/,/g, ''));
++    if (Number.isFinite(v)) kept.push({ raw: m[0], value: v });
++  }
++  return { kept, exempt };
++}
++
++/** Every number a claim licenses. ISO timestamps license their UTC HH and MM. */
++function claimedValues(claims) {
++  const out = [];
++  for (const c of claims || []) {
++    if (typeof c.value === 'number') out.push(c.value);
++    if (typeof c.value === 'string') {
++      const iso = c.value.match(/T(\d{2}):(\d{2})/);
++      if (iso) {
++        out.push(parseInt(iso[1], 10), parseInt(iso[2], 10));
++        out.push(parseInt(iso[1] + iso[2], 10));
++      }
++      const n = parseFloat(c.value.replace(/,/g, ''));
++      if (Number.isFinite(n)) out.push(n);
++    }
++  }
++  return out;
++}
++
++const licensed = (v, pool) => pool.some((p) => Math.abs(p - v) <= FLOAT_TOL);
++
++/** Strip base64 data URIs so the logo's own bytes never reach the color scan. */
++const stripDataURIs = (html) => html.replace(/data:[^;,]+;base64,[A-Za-z0-9+/=]+/g, 'DATA_URI');
++
++function htmlNumeralSources(html) {
++  const body = stripDataURIs(html)
++    .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
++    .replace(/<style\b[\s\S]*?<\/style>/gi, ' ');
++  const texts = [];
++  for (const m of body.matchAll(/>([^<]+)</g)) texts.push(m[1]);
++  for (const m of body.matchAll(/data-value\s*=\s*"([^"]*)"/gi)) texts.push(m[1]);
++  /* CSS `content:` can paint numerals onto the card that never appear in the
++   * markup. Anything a reader can screenshot has to be claimable, so the
++   * stylesheet's generated content is scanned too. */
++  const styles = stripDataURIs(html).match(/<style\b[\s\S]*?<\/style>/gi) || [];
++  for (const block of styles) {
++    for (const m of block.matchAll(/content\s*:\s*(["'])([\s\S]*?)\1/gi)) texts.push(m[2]);
++  }
++  return texts.join(' ');
++}
++
++function pngInfo(file) {
++  const buf = fs.readFileSync(file);
++  if (buf.length < 24 || buf.readUInt32BE(0) !== 0x89504e47) return null;
++  const width = buf.readUInt32BE(16);
++  const height = buf.readUInt32BE(20);
++  let idat = 0, off = 8;
++  while (off + 8 <= buf.length) {
++    const len = buf.readUInt32BE(off);
++    const type = buf.toString('ascii', off + 4, off + 8);
++    if (type === 'IDAT') idat += len;
++    if (type === 'IEND') break;
++    off += 12 + len;
++  }
++  return { width, height, idat, bytes: buf.length };
++}
++
++function cosine(a, b) {
++  const tok = (s) => String(s).toLowerCase().match(/[a-z0-9.,]+/g) || [];
++  const bag = (s) => tok(s).reduce((m, w) => (m[w] = (m[w] || 0) + 1, m), {});
++  const A = bag(a), B = bag(b);
++  let dot = 0, na = 0, nb = 0;
++  for (const k of Object.keys(A)) { na += A[k] ** 2; if (B[k]) dot += A[k] * B[k]; }
++  for (const k of Object.keys(B)) nb += B[k] ** 2;
++  return na && nb ? dot / Math.sqrt(na * nb) : 0;
++}
++
++const allItems = (rec) => [rec.tweet?.text || '', ...(rec.tweet?.thread || [])].filter(Boolean);
++const dayOf = (iso) => String(iso).slice(0, 10);
++
++/* --------------------------------- main ---------------------------------- */
++
++function main() {
++  const argv = process.argv.slice(2);
++  const arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
++  const recordPath = arg('--record');
++  const payloadPath = arg('--payload');
++  const repo = path.resolve(arg('--repo', '.'));
++  const asJSON = argv.includes('--json');
++
++  if (!recordPath || !payloadPath) {
++    console.error('usage: validate.js --record <file> --payload <file> [--repo .] [--json]');
++    process.exit(2);
++  }
++
++  const rec = readJSON(recordPath);
++  const payload = readJSON(payloadPath);
++  const prior = payload.prior_posts || [];
++  const nowUtc = payload.now_utc;
++
++  /* A skip record is a different object with different obligations. */
++  if (rec.post !== true) {
++    const r = rule(0, 'skip record shape');
++    if (!rec.skip_reason) r.fail('post is not true but skip_reason is missing');
++    else if (rec.tweet || rec.card) r.fail('skip record must omit tweet and card');
++    else r.pass(`skip: ${rec.skip_reason}`);
++    return report(results, asJSON);
++  }
++
++  const items = allItems(rec);
++  const joined = items.join('\n');
++  const pool = claimedValues(rec.claims);
++  const flags = rec.risk_flags || [];
++
++  /* 1 — post true, text non-empty */
++  {
++    const r = rule(1, 'post true and text non-empty');
++    if (!rec.tweet || !String(rec.tweet.text || '').trim()) r.fail('tweet.text is empty');
++    else r.pass();
++  }
++
++  /* 2 — every numeral in text + thread is claimed */
++  {
++    const r = rule(2, 'tweet numerals are claimed');
++    const bad = [], exempted = [];
++    for (const it of items) {
++      const { kept, exempt } = extractNumerals(it);
++      exempted.push(...exempt);
++      for (const num of kept) if (!licensed(num.value, pool)) bad.push(num.raw);
++    }
++    if (bad.length) r.fail(`unclaimed numerals: ${[...new Set(bad)].join(', ')}`);
++    else r.pass(exempted.length ? `ok (structural, unclaimed by design: ${[...new Set(exempted)].join(', ')})` : 'ok');
++  }
++
++  /* 3 — claim source_fields resolve */
++  {
++    const r = rule(3, 'claim source_fields resolve');
++    const bad = (rec.claims || []).filter((c) => resolveField(payload, c.source_field) === undefined);
++    if (!(rec.claims || []).length) r.fail('claims[] is empty but the post carries numerals');
++    else if (bad.length) r.fail(`unresolvable: ${bad.map((c) => c.source_field).join(', ')}`);
++    else r.pass(`${rec.claims.length} claims resolve`);
++  }
++
++  /* 4 — claim values match the payload */
++  {
++    const r = rule(4, 'claim values match payload');
++    const bad = [];
++    for (const c of rec.claims || []) {
++      const actual = resolveField(payload, c.source_field);
++      if (actual === undefined) continue;
++      if (typeof c.value === 'number' && typeof actual === 'number') {
++        if (Math.abs(actual - c.value) > FLOAT_TOL) bad.push(`${c.source_field}: claimed ${c.value}, payload ${actual}`);
++      } else if (String(actual) !== String(c.value)) {
++        bad.push(`${c.source_field}: claimed ${c.value}, payload ${actual}`);
++      }
++    }
++    if (bad.length) r.fail(bad.join(' | ')); else r.pass();
++  }
++
++  /* 5 — char_count accurate, every item <= 280 */
++  {
++    const r = rule(5, 'char counts');
++    const bad = [];
++    const actual = [...(rec.tweet.text || '')].length;
++    if (rec.tweet.char_count !== actual) bad.push(`char_count says ${rec.tweet.char_count}, actual ${actual}`);
++    items.forEach((it, i) => {
++      const len = [...it].length;
++      if (len > 280) bad.push(`item ${i} is ${len} chars`);
++    });
++    if (bad.length) r.fail(bad.join(' | ')); else r.pass();
++  }
++
++  /* 6 — banned tokens */
++  {
++    const r = rule(6, 'no banned tokens');
++    const hits = BANNED.filter(([re]) => re.test(joined)).map(([, label]) => label);
++    if (hits.length) r.fail(`matched: ${[...new Set(hits)].join(', ')}`); else r.pass();
++  }
++
++  /* 7 — slot threshold recomputed from the payload, not trusted */
++  {
++    const r = rule(7, 'slot threshold recomputed');
++    const ms = payload.market_state || {};
++    const slot = rec.slot;
++    let ok = null, why = '';
++    if (slot === 'morning_map') {
++      ok = !(payload.session && payload.session.holiday);
++      why = ok ? 'trading session' : 'holiday / no liquidity';
++    } else if (slot === 'london_open') {
++      const atr = ms.atr20;
++      const range = ms.asia_range ? ms.asia_range.high - ms.asia_range.low : null;
++      const dists = (ms.levels || []).map((l) => Math.abs(ms.last - l.price));
++      const nearest = dists.length ? Math.min(...dists) : Infinity;
++      const wide = atr && range !== null && range >= ATR_RANGE_MULT * atr;
++      const near = atr && nearest <= ATR_PROX_MULT * atr;
++      ok = Boolean(wide || near);
++      why = `range ${range} vs ${(ATR_RANGE_MULT * atr).toFixed(2)}; nearest level ${nearest.toFixed(2)} vs ${(ATR_PROX_MULT * atr).toFixed(2)}`;
++    } else if (slot === 'pre_event') {
++      const t1 = (payload.calendar || []).filter((e) => e.tier === 1);
++      const inWin = t1.some((e) => {
++        const mins = (Date.parse(e.time_utc) - Date.parse(nowUtc)) / 60000;
++        return mins > 0 && mins <= PRE_EVENT_WINDOW_MIN;
++      });
++      const n = payload.ere?.n ?? 0;
++      ok = inWin && n >= ERE_MIN_N;
++      why = `tier-1 in window: ${inWin}; ere.n = ${n}`;
++    } else if (slot === 'post_event') {
++      ok = Boolean(payload.realized);
++      why = `realized block present: ${ok}`;
++    } else if (slot === 'recap') {
++      const today = dayOf(nowUtc);
++      ok = prior.some((p) => dayOf(p.generated_at || today) === today && (p.claims || []).length);
++      why = `checkable claims posted today: ${ok}`;
++    }
++    if (ok === null) r.warn(`unknown slot ${slot}`);
++    else if (!ok) r.fail(`threshold not met (${why}) but the record says post`);
++    else r.pass(why);
++  }
++
++  /* 8 — rate limit */
++  {
++    const r = rule(8, 'rate limit');
++    const today = dayOf(nowUtc);
++    const sameSlot = prior.filter((p) => p.slot === rec.slot && dayOf(p.generated_at || '') === today);
++    const paired = rec.slot === 'post_event';
++    let last2h = null;
++    for (const p of prior) {
++      if (!p.generated_at) continue;
++      const mins = (Date.parse(nowUtc) - Date.parse(p.generated_at)) / 60000;
++      if (mins >= 0 && mins < 120) last2h = p;
++    }
++    if (sameSlot.length) r.fail(`${rec.slot} already posted today`);
++    else if (last2h && !(paired && last2h.slot === 'pre_event')) r.fail(`post within 2h of ${last2h.slot}`);
++    else r.pass();
++  }
++
++  /* 9 — similarity vs last 72h */
++  {
++    const r = rule(9, 'similarity vs last 72h');
++    let worst = 0, which = null;
++    for (const p of prior) {
++      const s = cosine(joined, p.text || '');
++      if (s > worst) { worst = s; which = p.slot; }
++    }
++    if (worst >= SIMILARITY_MAX) r.fail(`cosine ${worst.toFixed(3)} vs ${which} exceeds ${SIMILARITY_MAX}`);
++    else r.pass(`max cosine ${worst.toFixed(3)}`);
++  }
++
++  /* 10 — card numerals are claimed */
++  {
++    const r = rule(10, 'card numerals are claimed');
++    const html = rec.card?.html_path && fs.existsSync(path.resolve(repo, rec.card.html_path))
++      ? fs.readFileSync(path.resolve(repo, rec.card.html_path), 'utf8') : null;
++    if (!html) r.fail(`card.html_path missing or unreadable: ${rec.card?.html_path}`);
++    else {
++      const { kept, exempt } = extractNumerals(htmlNumeralSources(html));
++      const bad = kept.filter((n) => !licensed(n.value, pool)).map((n) => n.raw);
++      if (bad.length) r.fail(`unclaimed on card: ${[...new Set(bad)].join(', ')}`);
++      else r.pass(exempt.length ? `ok (structural: ${[...new Set(exempt)].join(', ')})` : 'ok');
++    }
++  }
++
++  /* 11 — card color tokens */
++  {
++    const r = rule(11, 'card color tokens');
++    const p = rec.card?.html_path ? path.resolve(repo, rec.card.html_path) : null;
++    if (!p || !fs.existsSync(p)) r.skip('no card html');
++    else {
++      const raw = fs.readFileSync(p, 'utf8');
++      const scan = stripDataURIs(raw);
++      const bad = [];
++      for (const m of scan.matchAll(/#[0-9a-fA-F]{3,8}\b/g)) {
++        if (!TOKENS.includes(m[0].toLowerCase())) bad.push(m[0]);
++      }
++      for (const m of scan.matchAll(/\b(?:rgba?|hsla?)\s*\(/gi)) bad.push(m[0].trim());
++      const styleish = scan.match(/(?:color|background|fill|stroke|border[a-z-]*)\s*:\s*([a-z]+)\s*[;}"']/gi) || [];
++      for (const decl of styleish) {
++        const word = decl.split(':')[1].replace(/[^a-z]/gi, '').toLowerCase();
++        if (NAMED_COLORS.includes(word)) bad.push(word);
++      }
++      const missing = CANONICAL_DECLS.filter((d) => !raw.includes(d));
++      if (bad.length) r.fail(`off-token color literals: ${[...new Set(bad)].join(', ')}`);
++      else if (missing.length) r.fail(`--bp-* declarations not byte-identical, missing: ${missing.join(' ')}`);
++      else r.pass();
++    }
++  }
++
++  /* 12 — logo integrity */
++  {
++    const r = rule(12, 'logo integrity');
++    const asset = rec.card?.logo_asset ? path.resolve(repo, rec.card.logo_asset) : null;
++    const htmlPath = rec.card?.html_path ? path.resolve(repo, rec.card.html_path) : null;
++    if (flags.includes('logo_asset_missing')) {
++      if (asset && fs.existsSync(asset)) r.fail('flagged logo_asset_missing but the asset exists');
++      else r.pass('flagged missing, consistent');
++    } else if (!asset || !fs.existsSync(asset)) {
++      r.fail(`logo_asset not found: ${rec.card?.logo_asset}`);
++    } else if (!htmlPath || !fs.existsSync(htmlPath)) {
++      r.fail('cannot verify embed, card html missing');
++    } else {
++      const want = crypto.createHash('sha256').update(fs.readFileSync(asset)).digest('hex');
++      const html = fs.readFileSync(htmlPath, 'utf8');
++      let matched = false;
++      for (const m of html.matchAll(/data:image\/svg\+xml;base64,([A-Za-z0-9+/=]+)/g)) {
++        const got = crypto.createHash('sha256').update(Buffer.from(m[1], 'base64')).digest('hex');
++        if (got === want) { matched = true; break; }
++      }
++      if (matched) r.pass('embedded bytes hash-identical to asset');
++      else r.fail('no base64 embed in the card matches the logo asset hash (recolored, re-exported, or inlined as markup)');
++    }
++  }
++
++  /* 13 — render check */
++  {
++    const r = rule(13, 'render check');
++    const p = rec.card?.png_path ? path.resolve(repo, rec.card.png_path) : null;
++    if (!p || !fs.existsSync(p)) r.fail(`png missing: ${rec.card?.png_path}`);
++    else {
++      const info = pngInfo(p);
++      if (!info) r.fail('not a valid PNG');
++      else {
++        const okDims = (info.width === 1600 && info.height === 900) || (info.width === 3200 && info.height === 1800);
++        if (!okDims) r.fail(`dimensions ${info.width}x${info.height}, expected 1600x900 or 3200x1800`);
++        else if (info.idat < 5000) r.fail(`image looks blank (${info.idat} compressed bytes)`);
++        else r.pass(`${info.width}x${info.height}, ${Math.round(info.bytes / 1024)}KB`);
++      }
++    }
++  }
++
++  /* 14 — variant rotation */
++  {
++    const r = rule(14, 'variant rotation');
++    const v = rec.card?.layout_variant;
++    const prevSameSlot = prior.filter((p) => p.slot === rec.slot)[0];
++    const prevAny = prior[0];
++    if (!v) r.fail('card.layout_variant missing');
++    else if (prevSameSlot && prevSameSlot.card?.layout_variant === v) r.fail(`variant "${v}" repeats the last ${rec.slot}`);
++    else if (prevAny && prevAny.card?.layout_variant === v) r.fail(`variant "${v}" repeats the immediately preceding post`);
++    else r.pass(v);
++  }
++
++  /* 15 — timestamps are UTC */
++  {
++    const r = rule(15, 'timestamps are UTC');
++    const bad = [];
++    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(rec.generated_at || '')) {
++      bad.push(`generated_at "${rec.generated_at}" is not ISO 8601 Z`);
++    }
++    const surfaces = joined + JSON.stringify(rec.card || {});
++    if (/\bWIB\b|\bET\b|\+07:?00/.test(surfaces)) bad.push('local-zone string present in tweet or card');
++    if (bad.length) r.fail(bad.join(' | ')); else r.pass();
++  }
++
++  /* 16 — scenario map two-sidedness (heuristic, warn) */
++  {
++    const r = rule(16, 'scenario map two-sidedness');
++    const up = /\b(?:above|over|through|breaks?)\s+[\d,]/i.test(joined);
++    const down = /\b(?:below|under|holds?\s+below|loses?)\s+[\d,]/i.test(joined);
++    if (up && down) r.pass('two-sided');
++    else if (!up && !down) r.warn('no conditional level construction detected');
++    else if (flags.includes('one_sided_map')) r.warn('one-sided, correctly flagged — needs manual review');
++    else r.fail('one-sided map without risk_flag "one_sided_map"');
++  }
++
++  /* 17 — humanizer gate, recomputed */
++  {
++    const r = rule(17, 'humanizer gate');
++    const cli = path.resolve(repo, 'tools/humanizer/cli.js');
++    const local = [];
++    for (const t of TIER1) if (new RegExp(`\\b${t}\\b`, 'i').test(joined)) local.push(t);
++    for (const f of FILLER) if (joined.toLowerCase().includes(f)) local.push(f);
++    for (const it of items) if ((it.match(/—/g) || []).length > 1) local.push('multiple em dashes in one item');
++    if (/[‘’“”]/.test(joined)) local.push('curly quotes');
++
++    if (local.length) { r.fail(`pattern hits: ${[...new Set(local)].join(', ')}`); }
++    else if (!fs.existsSync(cli)) {
++      if (flags.includes('humanizer_cli_missing')) r.warn('CLI absent, correctly flagged');
++      else r.fail('CLI absent and risk_flag "humanizer_cli_missing" not set');
++    } else {
++      let score = null;
++      try { score = parseInt(execFileSync('node', [cli, 'score'], { input: joined, encoding: 'utf8' }).trim(), 10); }
++      catch (e) { score = parseInt(String(e.stdout || '').trim(), 10); }
++      if (!Number.isFinite(score)) r.fail('could not read a score from the humanizer CLI');
++      else if (score >= HUMANIZER_MAX) r.fail(`score ${score} >= ${HUMANIZER_MAX}`);
++      else {
++        if (rec.humanizer_score !== score) r.warn(`recomputed ${score}, record claimed ${rec.humanizer_score}`);
++        else r.pass(`score ${score}`);
++      }
++    }
++  }
++
++  /* 18 — hook rule */
++  {
++    const r = rule(18, 'hook contains a digit in first 40 chars');
++    const heads = [rec.tweet.text, ...(rec.tweet.thread || []).slice(0, 1)].filter(Boolean);
++    const bad = heads.filter((h) => !/\d/.test([...h].slice(0, 40).join('')));
++    if (bad.length) r.fail(`no digit in first 40 chars of ${bad.length} item(s)`); else r.pass();
++  }
++
++  /* 19 — post_event pairing */
++  {
++    const r = rule(19, 'post_event pairing');
++    if (rec.slot !== 'post_event') r.skip('not a post_event');
++    else {
++      const realized = payload.realized || {};
++      const today = dayOf(nowUtc);
++      const pre = prior.find((p) => p.slot === 'pre_event' && dayOf(p.generated_at || '') === today
++        && (p.event_key || payload.ere?.event_key) === realized.event_key);
++      const bad = [];
++      if (!pre) bad.push('no matching pre_event in today\'s prior_posts');
++      if (rec.references_prior_post_id !== realized.pre_event_post_id) {
++        bad.push(`references_prior_post_id ${rec.references_prior_post_id} != realized.pre_event_post_id ${realized.pre_event_post_id}`);
++      }
++      const pctInText = [...joined.matchAll(/(\d{1,3})(?:st|nd|rd|th)\s+percentile/gi)].map((m) => parseInt(m[1], 10));
++      if (pctInText.length && pctInText.some((p) => p !== realized.percentile_vs_ere)) {
++        bad.push(`percentile in text ${pctInText.join(',')} != realized.percentile_vs_ere ${realized.percentile_vs_ere}`);
++      }
++      if (bad.length) r.fail(bad.join(' | ')); else r.pass();
++    }
++  }
++
++  /* 20 — magnitude adjectives */
++  {
++    const r = rule(20, 'no magnitude adjectives');
++    const m = joined.match(MAGNITUDE_ADJ);
++    if (m) r.fail(`"${m[0]}" — use a percentile instead`); else r.pass();
++  }
++
++  report(results, asJSON);
++}
++
++function report(res, asJSON) {
++  const failed = res.filter((r) => r.status === 'FAIL');
++  const warned = res.filter((r) => r.status === 'warn');
++  if (asJSON) {
++    console.log(JSON.stringify({ ok: !failed.length, failed: failed.length, warned: warned.length, results: res }, null, 2));
++  } else {
++    for (const r of res) {
++      const mark = r.status === 'pass' ? 'ok  ' : r.status === 'FAIL' ? 'FAIL' : r.status === 'warn' ? 'warn' : 'skip';
++      console.log(`[${mark}] ${String(r.n).padStart(2)}. ${r.title}${r.message ? ' — ' + r.message : ''}`);
++    }
++    console.log(failed.length
++      ? `\nDO NOT POST — ${failed.length} rule(s) failed.`
++      : `\nOK to post${warned.length ? ` (${warned.length} warning(s) — read them)` : ''}.`);
++  }
++  process.exit(failed.length ? 1 : 0);
++}
++
++main();
+-- 
+2.43.0
+
+
+From c6498a2b4379944508c5f320cc1486f16b6534f0 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 20 Aug 2026 14:39:24 +0000
+Subject: [PATCH 2/2] Add payload endpoint contract and checker (phase 1, three
+ slots)
+
+- docs/payload_endpoint.md: the contract the endpoint must satisfy, with
+  prior_posts documented as the state store (scheduled runs cannot push,
+  so rules 8/9/14 depend on it) and session_today required for recap
+- tools/validator/check_payload.js: validates an endpoint response before
+  it is wired to a task; previews the london_open threshold
+- fixtures: add session.holiday, add a recap payload
+---
+ docs/payload_endpoint.md         | 124 +++++++++++++++++++++++++++
+ fixtures/payload_recap.json      |  82 ++++++++++++++++++
+ tools/validator/check_payload.js | 141 +++++++++++++++++++++++++++++++
+ 3 files changed, 347 insertions(+)
+ create mode 100644 docs/payload_endpoint.md
+ create mode 100644 fixtures/payload_recap.json
+ create mode 100644 tools/validator/check_payload.js
+
+diff --git a/docs/payload_endpoint.md b/docs/payload_endpoint.md
+new file mode 100644
+index 0000000..036cdea
+--- /dev/null
++++ b/docs/payload_endpoint.md
+@@ -0,0 +1,124 @@
++# Payload endpoint — contract (phase 1, three slots)
++
++One HTTP route. Returns one JSON object. It is the only thing the generator is
++allowed to get numbers from, so every field here is load-bearing: a number that
++is not in this payload cannot appear in a tweet or on a card.
++
++```
++GET {BASE}/market_state?slot=<morning_map|london_open|recap>&instrument=XAUUSD
++```
++
++Auth: a static bearer header is fine. Respond `200` with the object below, or a
++non-200 — the runner treats any non-200, non-JSON, or `market_state`-less
++response as `skip_reason: "payload_unavailable"` and posts nothing. Never serve
++a partial object with nulls standing in for real numbers; a skipped slot is
++cheap, a wrong number on a card is not.
++
++Phase 1 covers `morning_map`, `london_open` and `recap`. `ere` and `realized`
++stay `null` until the event-response dataset exists; `pre_event` and
++`post_event` are not scheduled until then.
++
++## Shape
++
++```jsonc
++{
++  "slot": "morning_map",              // echo the query param
++  "now_utc": "2026-08-19T23:30:00Z",  // server time, ISO 8601, Z-suffixed
++  "instrument": "XAUUSD",
++
++  "session": { "holiday": false },    // true on holiday / no-liquidity sessions
++
++  "market_state": {
++    "last": 3408.2,
++    "atr20": 28.4,
++    "asia_range": { "high": 3414.0, "low": 3399.5 },
++    "prior_day": { "high": 3421.8, "low": 3395.1, "close": 3410.0 },
++    "levels": [
++      { "label": "weekly open",    "price": 3402.0, "source": "calc" },
++      { "label": "prior day high", "price": 3421.8, "source": "calc" }
++    ]
++  },
++
++  "calendar": [
++    { "event": "US Core PCE m/m", "tier": 1,
++      "time_utc": "2026-08-20T12:30:00Z",
++      "consensus": 0.3, "prior": 0.2 }
++  ],
++
++  "session_today": null,              // required for recap, null otherwise
++
++  "prior_posts": [
++    { "id": "01J...", "slot": "morning_map",
++      "generated_at": "2026-08-18T23:30:00Z",
++      "text": "…as posted…",
++      "claims": [ { "assertion": "…", "value": 3412.4, "source_field": "…" } ],
++      "card": { "template": "levels", "layout_variant": "ladder-left" } }
++  ],
++
++  "ere": null,
++  "realized": null
++}
++```
++
++## Field notes
++
++**`session.holiday`** — the only thing standing between the account and a
++`morning_map` posted into a dead tape. Validator rule 7 reads it directly.
++
++**`atr20`** — 20-period ATR on daily bars. It is the denominator for both
++`london_open` thresholds, so a definition change silently moves the posting rate;
++if you change it, re-run the backfill.
++
++**`asia_range`** — high and low over the Tokyo window, 23:00–07:00 UTC. State the
++window in your implementation and keep it fixed. At the `london_open` slot
++(07:30Z) the window has just closed, which is the point.
++
++**`levels`** — every level the post is allowed to name. The generator cannot
++invent one, and `label` is what it will call the level in prose, so write labels
++that read naturally in a sentence ("weekly open", not "WO_1"). Keep the list
++short; four or five is plenty.
++
++**`calendar`** — today and the session ahead. `tier: 1` is what `pre_event` will
++key off later; phase 1 only quotes the event name and `time_utc`.
++
++**`prior_posts`** — the last 72 hours. **This is the state store.** Scheduled runs
++cannot write to the repo, so rate limiting (rule 8), variant rotation (rule 14)
++and similarity (rule 9) all depend on this array being populated and accurate.
++An empty array means the generator believes nothing has been posted and will
++happily repeat yesterday's layout and framing. `generated_at` and
++`card.layout_variant` are the two fields most easily forgotten and most needed.
++
++**`session_today`** — required when `slot=recap`, `null` otherwise. Recap grades
++what was flagged against what happened, and a grade is only checkable if the
++outcome is a payload field:
++
++```jsonc
++"session_today": {
++  "high": 3419.4,
++  "low": 3401.2,
++  "last": 3416.8,
++  "levels_triggered": [
++    { "label": "prior day high", "price": 3421.8,
++      "triggered": false, "first_touch_utc": null },
++    { "label": "weekly open",    "price": 3402.0,
++      "triggered": true,  "first_touch_utc": "2026-08-20T09:14:00Z" }
++  ]
++}
++```
++
++Without this the recap slot cannot pass rule 2 — it would have to assert an
++outcome with no field behind it, which is the one thing the architecture forbids.
++
++## Testing before the endpoint exists
++
++The pipeline can be exercised end to end today by serving a static file. Take
++`fixtures/payload.json`, host it at any URL the sandbox can reach, and point the
++scheduled task at it. Everything downstream — generation, card render, all 20
++validator rules — runs unchanged against a stub.
++
++Validate a real response against this contract before wiring it up:
++
++```bash
++curl -s "$BASE/market_state?slot=morning_map" \
++  | node tools/validator/check_payload.js --slot morning_map
++```
+diff --git a/fixtures/payload_recap.json b/fixtures/payload_recap.json
+new file mode 100644
+index 0000000..5df1642
+--- /dev/null
++++ b/fixtures/payload_recap.json
+@@ -0,0 +1,82 @@
++{
++  "slot": "recap",
++  "now_utc": "2026-08-20T21:00:00Z",
++  "instrument": "XAUUSD",
++  "market_state": {
++    "last": 3408.2,
++    "atr20": 28.4,
++    "asia_range": {
++      "high": 3414,
++      "low": 3399.5
++    },
++    "prior_day": {
++      "high": 3421.8,
++      "low": 3395.1,
++      "close": 3410
++    },
++    "levels": [
++      {
++        "label": "weekly open",
++        "price": 3402,
++        "source": "calc"
++      },
++      {
++        "label": "prior day high",
++        "price": 3421.8,
++        "source": "calc"
++      }
++    ]
++  },
++  "calendar": [
++    {
++      "event": "US Core PCE m/m",
++      "tier": 1,
++      "time_utc": "2026-08-20T12:30:00Z",
++      "consensus": 0.3,
++      "prior": 0.2
++    }
++  ],
++  "ere": null,
++  "prior_posts": [
++    {
++      "id": "mm-1",
++      "slot": "morning_map",
++      "generated_at": "2026-08-19T23:30:00Z",
++      "text": "3,421.8 and 3,402.0 bracket the session.",
++      "claims": [
++        {
++          "assertion": "prior day high",
++          "value": 3421.8,
++          "source_field": "market_state.levels[1].price"
++        }
++      ],
++      "card": {
++        "template": "levels",
++        "layout_variant": "bracket-split"
++      }
++    }
++  ],
++  "realized": null,
++  "session": {
++    "holiday": false
++  },
++  "session_today": {
++    "high": 3419.4,
++    "low": 3401.2,
++    "last": 3416.8,
++    "levels_triggered": [
++      {
++        "label": "prior day high",
++        "price": 3421.8,
++        "triggered": false,
++        "first_touch_utc": null
++      },
++      {
++        "label": "weekly open",
++        "price": 3402,
++        "triggered": true,
++        "first_touch_utc": "2026-08-20T09:14:00Z"
++      }
++    ]
++  }
++}
+\ No newline at end of file
+diff --git a/tools/validator/check_payload.js b/tools/validator/check_payload.js
+new file mode 100644
+index 0000000..9144364
+--- /dev/null
++++ b/tools/validator/check_payload.js
+@@ -0,0 +1,141 @@
++#!/usr/bin/env node
++/**
++ * Payload contract check — run this against the endpoint before wiring it into
++ * a scheduled task. Catches the shape problems that would otherwise surface as
++ * a silent skip at 23:30 UTC.
++ *
++ *   curl -s "$BASE/market_state?slot=morning_map" | node tools/validator/check_payload.js --slot morning_map
++ *   node tools/validator/check_payload.js --slot recap -f payload.json
++ */
++
++'use strict';
++const fs = require('fs');
++
++const problems = [];
++const warnings = [];
++const bad = (m) => problems.push(m);
++const warn = (m) => warnings.push(m);
++
++const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
++const num = (v) => typeof v === 'number' && Number.isFinite(v);
++
++function checkNum(obj, path) {
++  const parts = path.split('.');
++  let cur = obj;
++  for (const p of parts) { if (cur == null) break; cur = cur[p]; }
++  if (!num(cur)) bad(`${path} must be a finite number (got ${JSON.stringify(cur)})`);
++  return cur;
++}
++
++function main() {
++  const argv = process.argv.slice(2);
++  const arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
++  const slot = arg('--slot');
++  const file = arg('-f');
++
++  const raw = file ? fs.readFileSync(file, 'utf8') : fs.readFileSync(0, 'utf8');
++  let p;
++  try { p = JSON.parse(raw); }
++  catch (e) { console.error(`not JSON: ${e.message}`); process.exit(1); }
++
++  if (!slot) { console.error('usage: check_payload.js --slot <morning_map|london_open|recap> [-f file]'); process.exit(2); }
++
++  /* top level */
++  if (p.slot !== slot) bad(`slot is "${p.slot}", expected "${slot}"`);
++  if (!ISO.test(p.now_utc || '')) bad(`now_utc "${p.now_utc}" is not ISO 8601 Z-suffixed`);
++  if (!p.instrument) bad('instrument missing');
++  if (!p.session || typeof p.session.holiday !== 'boolean') {
++    bad('session.holiday must be a boolean — morning_map cannot decide to skip without it');
++  }
++
++  /* market_state */
++  const ms = p.market_state;
++  if (!ms) bad('market_state missing — the runner will skip with payload_unavailable');
++  else {
++    checkNum(p, 'market_state.last');
++    const atr = checkNum(p, 'market_state.atr20');
++    if (num(atr) && atr <= 0) bad('market_state.atr20 must be positive');
++    checkNum(p, 'market_state.asia_range.high');
++    checkNum(p, 'market_state.asia_range.low');
++    if (ms.asia_range && num(ms.asia_range.high) && num(ms.asia_range.low)
++        && ms.asia_range.high < ms.asia_range.low) bad('asia_range.high is below asia_range.low');
++    for (const k of ['high', 'low', 'close']) checkNum(p, `market_state.prior_day.${k}`);
++
++    if (!Array.isArray(ms.levels) || !ms.levels.length) bad('market_state.levels must be a non-empty array — the post can only name levels listed here');
++    else {
++      ms.levels.forEach((l, i) => {
++        if (!l.label || typeof l.label !== 'string') bad(`levels[${i}].label missing`);
++        if (!num(l.price)) bad(`levels[${i}].price must be a number`);
++        if (l.label && /_|\d{2,}/.test(l.label)) warn(`levels[${i}].label "${l.label}" will be read aloud in a sentence — prefer prose like "weekly open"`);
++      });
++      if (ms.levels.length > 6) warn(`${ms.levels.length} levels — long lists dilute the map; four or five is plenty`);
++    }
++  }
++
++  /* calendar */
++  if (!Array.isArray(p.calendar)) bad('calendar must be an array (empty is fine)');
++  else p.calendar.forEach((e, i) => {
++    if (!e.event) bad(`calendar[${i}].event missing`);
++    if (!ISO.test(e.time_utc || '')) bad(`calendar[${i}].time_utc "${e.time_utc}" is not ISO 8601 Z-suffixed`);
++    if (![1, 2, 3].includes(e.tier)) warn(`calendar[${i}].tier is ${e.tier}; tier 1 is what pre_event will key off`);
++  });
++
++  /* prior_posts — the state store */
++  if (!Array.isArray(p.prior_posts)) {
++    bad('prior_posts must be an array — rate limiting, variant rotation and similarity all read it');
++  } else {
++    if (!p.prior_posts.length) {
++      warn('prior_posts is empty. If that is genuinely true, fine. If it is a stub, the generator will repeat yesterday\'s layout and framing and nothing will stop it.');
++    }
++    p.prior_posts.forEach((q, i) => {
++      if (!ISO.test(q.generated_at || '')) bad(`prior_posts[${i}].generated_at "${q.generated_at}" is not ISO 8601 Z — rule 8 cannot compute the 2h gap without it`);
++      if (!q.slot) bad(`prior_posts[${i}].slot missing`);
++      if (typeof q.text !== 'string') bad(`prior_posts[${i}].text missing — rule 9 needs it for similarity`);
++      if (!q.card || !q.card.layout_variant) bad(`prior_posts[${i}].card.layout_variant missing — rule 14 cannot rotate variants without it`);
++    });
++    const now = Date.parse(p.now_utc);
++    if (Number.isFinite(now)) {
++      const stale = p.prior_posts.filter((q) => Date.parse(q.generated_at) < now - 72 * 3600e3).length;
++      if (stale) warn(`${stale} prior_posts entries are older than 72h — harmless, but the window is meant to be 72h`);
++    }
++  }
++
++  /* slot-specific */
++  if (slot === 'recap') {
++    const st = p.session_today;
++    if (!st) bad('session_today is required for recap — without it the grade has no payload field behind it and rule 2 fails');
++    else {
++      for (const k of ['high', 'low', 'last']) checkNum(p, `session_today.${k}`);
++      if (!Array.isArray(st.levels_triggered) || !st.levels_triggered.length) {
++        bad('session_today.levels_triggered must be a non-empty array — it is what the recap grades');
++      } else st.levels_triggered.forEach((l, i) => {
++        if (typeof l.triggered !== 'boolean') bad(`levels_triggered[${i}].triggered must be a boolean`);
++        if (!num(l.price)) bad(`levels_triggered[${i}].price must be a number`);
++        if (l.triggered && !ISO.test(l.first_touch_utc || '')) bad(`levels_triggered[${i}] is triggered but first_touch_utc is not a UTC timestamp`);
++      });
++    }
++  } else if (p.session_today) {
++    warn(`session_today is populated on a ${slot} payload; it is only read for recap`);
++  }
++
++  if (slot === 'london_open' && ms && num(ms.atr20) && ms.asia_range) {
++    const range = ms.asia_range.high - ms.asia_range.low;
++    const dists = (ms.levels || []).map((l) => Math.abs(ms.last - l.price)).filter(Number.isFinite);
++    const nearest = dists.length ? Math.min(...dists) : Infinity;
++    const fires = range >= 0.35 * ms.atr20 || nearest <= 0.15 * ms.atr20;
++    warn(`threshold preview: range ${range.toFixed(2)} vs ${(0.35 * ms.atr20).toFixed(2)}, nearest level ${nearest.toFixed(2)} vs ${(0.15 * ms.atr20).toFixed(2)} → would ${fires ? 'POST' : 'SKIP'}`);
++  }
++
++  /* phase 1 */
++  if (p.ere) warn('ere is populated; phase 1 ignores it and pre_event is not scheduled yet');
++  if (p.realized) warn('realized is populated; phase 1 ignores it and post_event is not scheduled yet');
++
++  for (const w of warnings) console.log(`warn  ${w}`);
++  for (const b of problems) console.log(`FAIL  ${b}`);
++  console.log(problems.length
++    ? `\n${problems.length} problem(s) — the generator would skip or produce unclaimable numbers.`
++    : `\nPayload satisfies the phase 1 contract${warnings.length ? ` (${warnings.length} warning(s))` : ''}.`);
++  process.exit(problems.length ? 1 : 0);
++}
++
++main();
+-- 
+2.43.0
+
