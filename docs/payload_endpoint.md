@@ -115,9 +115,18 @@ The payload does not have to come from a service. A `payload.json` committed to
 this repo and read at its raw URL works, and the run already clones the repo
 anyway:
 
+One file per slot, because the payload differs by slot — `slot` must echo the
+caller, and `recap` additionally carries `session_today`:
+
 ```
-https://raw.githubusercontent.com/kevincris/twitter-post/main/payload.json
+https://raw.githubusercontent.com/kevincris/twitter-post/main/data/payload.morning_map.json
+https://raw.githubusercontent.com/kevincris/twitter-post/main/data/payload.london_open.json
+https://raw.githubusercontent.com/kevincris/twitter-post/main/data/payload.recap.json
 ```
+
+Committed payloads live in `data/`. The bare `payload.json` at the repo root is
+gitignored on purpose: that is where each run writes the copy it fetched, and it
+must never be confused with the committed source.
 
 That removes the hosting problem entirely. It does not remove the producer
 problem — GitHub is a file host, not a data source, so something still has to

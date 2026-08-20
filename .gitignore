@@ -1,6 +1,6 @@
 .DS_Store
 node_modules/
-/payload.json
+/payload.json          # runtime scratch; the committed source lives in data/
 /repo/
 
 # delivered patches, not source
