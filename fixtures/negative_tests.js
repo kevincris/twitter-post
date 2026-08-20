@@ -10,12 +10,34 @@ const PAY = 'fixtures/payload.json';
 const HTML = 'out/2026-08-19_morning_map.html';
 const PNG = 'out/2026-08-19_morning_map.png';
 
+const REQUIRED = [REC, PAY, HTML, PNG];
+const missing = REQUIRED.filter((f) => !fs.existsSync(f));
+if (missing.length) {
+  console.error(`Missing fixture(s): ${missing.join(', ')}`);
+  console.error('Run from the repo root: `npm test`. If a fixture is genuinely absent,');
+  console.error('rebuild it with `npm run fixture` (needs `npx playwright install chromium`).');
+  process.exit(2);
+}
+
 const goodRec = fs.readFileSync(REC, 'utf8');
 const goodPay = fs.readFileSync(PAY, 'utf8');
 const goodHtml = fs.readFileSync(HTML, 'utf8');
 const goodPng = fs.readFileSync(PNG);
 
 const clone = () => JSON.parse(goodRec);
+
+/* The tests mutate tracked files in place. Restore them on any exit path,
+ * otherwise a crash mid-run leaves the working tree dirty and the next run
+ * reads a mutated "known-good" fixture. */
+function restore() {
+  fs.writeFileSync(REC, goodRec);
+  fs.writeFileSync(PAY, goodPay);
+  fs.writeFileSync(HTML, goodHtml);
+  fs.writeFileSync(PNG, goodPng);
+}
+process.on('exit', restore);
+process.on('SIGINT', () => process.exit(130));
+process.on('uncaughtException', (e) => { console.error(e); process.exit(1); });
 
 const CASES = [
   ['2  unclaimed numeral in tweet', 2, (r) => {

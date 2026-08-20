@@ -1,0 +1,58 @@
+{
+  "slot": "morning_map",
+  "now_utc": "2026-08-19T23:30:00Z",
+  "instrument": "XAUUSD",
+  "market_state": {
+    "last": 3408.2,
+    "atr20": 28.4,
+    "asia_range": {
+      "high": 3414,
+      "low": 3399.5
+    },
+    "prior_day": {
+      "high": 3421.8,
+      "low": 3395.1,
+      "close": 3410
+    },
+    "levels": [
+      {
+        "label": "weekly open",
+        "price": 3402,
+        "source": "calc"
+      },
+      {
+        "label": "prior day high",
+        "price": 3421.8,
+        "source": "calc"
+      }
+    ]
+  },
+  "calendar": [
+    {
+      "event": "US Core PCE m/m",
+      "tier": 1,
+      "time_utc": "2026-08-20T12:30:00Z",
+      "consensus": 0.3,
+      "prior": 0.2
+    }
+  ],
+  "ere": null,
+  "prior_posts": [
+    {
+      "id": "p1",
+      "slot": "morning_map",
+      "generated_at": "2026-08-18T23:30:00Z",
+      "text": "Old map from yesterday about other levels entirely.",
+      "claims": [],
+      "card": {
+        "template": "levels",
+        "layout_variant": "ladder-left"
+      }
+    }
+  ],
+  "realized": null,
+  "session": {
+    "holiday": false
+  },
+  "session_today": null
+}
