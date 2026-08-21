@@ -246,5 +246,41 @@ for (const [name, wantRule, mut] of V3_CASES) {
   else { failed++; console.log(`  MISS  ${name}  ->  expected rule ${wantRule}, got ${msg}`); }
 }
 
+/* ---- sampled figures --------------------------------------------------- */
+
+const SREC = 'fixtures/v3_sampled_record.json';
+const goodS = fs.readFileSync(SREC, 'utf8');
+
+const SAMPLED_CASES = [
+  ['23 sampled range published as a session range', 23, (r) => {
+    r.tweet.text = r.tweet.text.replace(', on 32 fifteen-minute samples', '');
+    r.tweet.char_count = [...r.tweet.text].length;
+  }],
+  ['23 sample count hidden from the text', 23, (r) => {
+    r.tweet.text = r.tweet.text.replace('on 32 fifteen-minute samples', 'on fifteen-minute samples');
+    r.tweet.char_count = [...r.tweet.text].length;
+  }],
+  ['3  sampled source with no window', 3, (r) => { delete r.claims[r.claims.length - 1].source.window; }],
+  ['3  sampled source misstates n', 3, (r) => { r.claims[r.claims.length - 1].source.n = 99; }],
+  ['4  sampled max is not the max of its inputs', 4, (r) => { r.claims[r.claims.length - 2].value += 5; }],
+];
+
+for (const [name, wantRule, mut] of SAMPLED_CASES) {
+  const rec = JSON.parse(goodS);
+  mut(rec);
+  fs.writeFileSync('/tmp/_scase.json', JSON.stringify(rec, null, 2));
+  let out = '';
+  try { out = execFileSync('node', ['tools/validator/validate.js', '--record', '/tmp/_scase.json', '--repo', '.', '--json'], { encoding: 'utf8' }); }
+  catch (e) { out = e.stdout || ''; }
+  let hit = false, msg = '';
+  try {
+    const j = JSON.parse(out);
+    const f = j.results.find((x) => x.n === wantRule && x.status === 'FAIL');
+    hit = Boolean(f); msg = f ? f.message : (j.results.find((x) => x.status === 'FAIL')?.n ?? 'nothing');
+  } catch { msg = 'validator produced no JSON'; }
+  if (hit) { passed++; console.log(`  ok    ${name}  ->  rule ${wantRule} caught it`); }
+  else { failed++; console.log(`  MISS  ${name}  ->  expected rule ${wantRule}, got ${msg}`); }
+}
+
 console.log(`\n${passed} caught, ${failed} missed.`);
 process.exit(failed ? 1 : 0);

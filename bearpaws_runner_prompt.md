@@ -89,8 +89,9 @@ Some figures cannot be researched and must be `computed`:
 - **ATR20** — fetch 20 daily bars, compute true ranges, publish the mean with the
   inputs. No site publishes a reliable XAUUSD ATR20; anything claiming to is not
   a source you can check.
-- **The Asia range** — the 23:00–07:00 UTC high and low is a window over intraday
-  bars, not a quotable figure.
+- **The Asia range** — computed as `min`/`max` over the rows of
+  `data/xauusd_samples.csv` falling inside 23:00–07:00 UTC. A sampled
+  approximation, and it must be published as one; see the sampling rule below.
 - **Session outcomes for `recap`** — today's high, low, and which listed levels
   traded through, each derived from bars you fetched.
 
@@ -267,6 +268,15 @@ burden of proof as a quote:
   pre-computed true ranges asks the validator to trust twenty numbers nobody can
   trace; supplying the bars lets it recompute the ranges and check each bar
   against the snapshot.
+- **Sampled figures must say they are sampled.** The Asia range is derived from
+  `data/xauusd_samples.csv`, a 15-minute log of delayed quotes — not from
+  intraday bars, which no source reachable from this container provides. The
+  min and max of those samples is not the session high and low; it understates
+  the true range, sometimes badly. Mark the source `sampled: true` with its
+  `window` and `n`, and say so in the text: "on 32 fifteen-minute samples".
+  Both the disclosure and the count are enforced. GitHub's scheduler drifts, so
+  `n` varies — publish the real count, never a nominal one, and if `n` is low
+  enough that the range means little, skip the slot instead.
 - **Unit and timezone conversions are not derivations.** A release time in UTC is a
   `web` claim quoting the source, with the source's timezone stated. Do not
   reconstruct it arithmetically.

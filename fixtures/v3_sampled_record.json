@@ -1,0 +1,182 @@
+{
+  "slot": "morning_map",
+  "post": true,
+  "skip_reason": null,
+  "tweet": {
+    "text": "3403.87 capped the Asia window and 3383.77 floored it, on 32 fifteen-minute samples. 4,484.21 is spot now. Above 4,500.0 the round number is reference; below 4,450.0 the weekly open comes back into play. $XAUUSD",
+    "char_count": 211,
+    "thread": []
+  },
+  "claims": [
+    {
+      "assertion": "spot 4484.21",
+      "value": 4484.21,
+      "source": {
+        "kind": "web",
+        "url": "https://bearpaws.io",
+        "retrieved_at": "2026-08-20T15:50:00Z",
+        "quoted_text": "XAU/USD 4484.21",
+        "snapshot": "snapshots/2026-08-20_morning_map/bearpaws-io.txt"
+      }
+    },
+    {
+      "assertion": "daily change -0.67%",
+      "value": 0.67,
+      "source": {
+        "kind": "web",
+        "url": "https://bearpaws.io",
+        "retrieved_at": "2026-08-20T15:50:00Z",
+        "quoted_text": "-0.67%",
+        "snapshot": "snapshots/2026-08-20_morning_map/bearpaws-io.txt"
+      }
+    },
+    {
+      "assertion": "ATR20 31.25",
+      "value": 31.4,
+      "source": {
+        "kind": "computed",
+        "method": "mean",
+        "inputs": [
+          30,
+          32,
+          31,
+          32.5,
+          31.5
+        ],
+        "derived_from": "snapshots/2026-08-20_morning_map/bearpaws-io.txt"
+      }
+    },
+    {
+      "assertion": "round number 4500",
+      "value": 4500,
+      "source": {
+        "kind": "web",
+        "url": "https://bearpaws.io",
+        "retrieved_at": "2026-08-20T15:50:00Z",
+        "quoted_text": "resistance at 4500.0",
+        "snapshot": "snapshots/2026-08-20_morning_map/bearpaws-io.txt"
+      }
+    },
+    {
+      "assertion": "weekly open 4450",
+      "value": 4450,
+      "source": {
+        "kind": "web",
+        "url": "https://bearpaws.io",
+        "retrieved_at": "2026-08-20T15:50:00Z",
+        "quoted_text": "weekly open 4450.0",
+        "snapshot": "snapshots/2026-08-20_morning_map/bearpaws-io.txt"
+      }
+    },
+    {
+      "assertion": "Asia range high, 15-min samples (n=32)",
+      "value": 3403.87,
+      "source": {
+        "kind": "computed",
+        "method": "max",
+        "inputs": [
+          3403.87,
+          3401.64,
+          3402.6,
+          3399.87,
+          3400.1,
+          3399.24,
+          3396.41,
+          3396.46,
+          3393.5,
+          3393.07,
+          3390.32,
+          3387.7,
+          3387.22,
+          3389.31,
+          3386.9,
+          3385.13,
+          3385.94,
+          3388.81,
+          3389.3,
+          3388.64,
+          3391.69,
+          3388.79,
+          3391.08,
+          3389.74,
+          3387.46,
+          3385.01,
+          3383.79,
+          3385.81,
+          3383.77,
+          3384.29,
+          3385.18,
+          3384.36
+        ],
+        "derived_from": "data/xauusd_samples.csv",
+        "sampled": true,
+        "n": 32,
+        "window": {
+          "from": "2026-08-20T23:00:00Z",
+          "to": "2026-08-21T07:00:00Z"
+        }
+      }
+    },
+    {
+      "assertion": "Asia range low, 15-min samples (n=32)",
+      "value": 3383.77,
+      "source": {
+        "kind": "computed",
+        "method": "min",
+        "inputs": [
+          3403.87,
+          3401.64,
+          3402.6,
+          3399.87,
+          3400.1,
+          3399.24,
+          3396.41,
+          3396.46,
+          3393.5,
+          3393.07,
+          3390.32,
+          3387.7,
+          3387.22,
+          3389.31,
+          3386.9,
+          3385.13,
+          3385.94,
+          3388.81,
+          3389.3,
+          3388.64,
+          3391.69,
+          3388.79,
+          3391.08,
+          3389.74,
+          3387.46,
+          3385.01,
+          3383.79,
+          3385.81,
+          3383.77,
+          3384.29,
+          3385.18,
+          3384.36
+        ],
+        "derived_from": "data/xauusd_samples.csv",
+        "sampled": true,
+        "n": 32,
+        "window": {
+          "from": "2026-08-20T23:00:00Z",
+          "to": "2026-08-21T07:00:00Z"
+        }
+      }
+    }
+  ],
+  "references_prior_post_id": null,
+  "risk_flags": [],
+  "humanizer_score": 0,
+  "card": {
+    "template": "levels",
+    "layout_variant": "hero-web",
+    "html_path": "none.html",
+    "png_path": "none.png",
+    "logo_asset": "bearpaws_logo_white.svg",
+    "design_notes": "n/a"
+  },
+  "generated_at": "2026-08-20T15:52:00Z"
+}

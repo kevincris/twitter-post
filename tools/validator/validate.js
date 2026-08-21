@@ -388,6 +388,17 @@ async function main() {
          * yields it, and the validator would confirm the arithmetic while
          * knowing nothing about where the operands came from. */
         if (!src.derived_from) bad.push(`${tag}: computed source needs derived_from — a snapshot its inputs can be traced to`);
+
+        /* A sampled figure is not the thing it approximates. The min and max of
+         * 32 delayed snapshots is not a session high and low, and publishing it
+         * as one is a false label on a checkable number. */
+        if (src.sampled) {
+          if (!src.window || !src.window.from || !src.window.to) bad.push(`${tag}: sampled source needs window {from, to} in UTC`);
+          if (!Number.isFinite(src.n)) bad.push(`${tag}: sampled source needs n, the sample count`);
+          else if (Array.isArray(src.inputs) && src.n !== src.inputs.length) {
+            bad.push(`${tag}: sampled source says n=${src.n} but carries ${src.inputs.length} inputs`);
+          }
+        }
       }
     }
     if (!claims.length) r.fail('claims[] is empty but the post carries numerals');
@@ -774,6 +785,27 @@ async function main() {
         .filter((x) => Number.isFinite(x.min) && x.min > 120);
       if (stale.length) r.warn(`${stale.map((x) => `${x.c.assertion || x.c.value} read ${Math.round(x.min)} min before publishing`).join('; ')}`);
       else r.pass();
+    }
+  }
+
+  /* 23 — sampled figures are disclosed as sampled */
+  {
+    const r = rule(23, 'sampled figures disclose their sampling');
+    const sampled = (rec.claims || []).filter((c) => (claimSource(c) || {}).sampled === true);
+    if (!sampled.length) r.skip('nothing sampled');
+    else {
+      const problems = [];
+      const disclosed = /\bsampl|\bn\s*=\s*\d+|\d+\s*-?\s*min(?:ute)?\b/i.test(joined);
+      if (!disclosed) {
+        problems.push(`the post publishes ${sampled.length} sampled figure(s) but never says so — a reader takes "Asia range" to mean the session high and low, not the extremes of ${sampled[0] && claimSource(sampled[0]).n} delayed snapshots`);
+      }
+      /* The count has to be visible, not just present in the JSON. */
+      const counts = [...new Set(sampled.map((c) => claimSource(c).n))].filter(Number.isFinite);
+      for (const n of counts) {
+        if (!new RegExp(`\\b${n}\\b`).test(joined)) problems.push(`sample count n=${n} does not appear in the text or thread`);
+      }
+      if (problems.length) r.fail(problems.join(' | '));
+      else r.pass(`${sampled.length} sampled figure(s), disclosed`);
     }
   }
 

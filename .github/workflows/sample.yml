@@ -1,0 +1,81 @@
+name: sample-xauusd
+
+# Every 15 minutes. GitHub's scheduler drifts and occasionally skips runs, so
+# the sample count in any window is not guaranteed — which is exactly why the
+# count is published alongside the range rather than assumed.
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sample-xauusd
+  cancel-in-progress: false
+
+jobs:
+  sample:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch and append one sample
+        run: |
+          set -euo pipefail
+          TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          HTML=$(curl -sS --fail --max-time 25 \
+                   -H 'user-agent: bearpaws-sampler' \
+                   https://bearpaws.io) || { echo "fetch failed"; exit 78; }
+
+          # The homepage renders "XAU/USD<price><change%>". Take the first
+          # number after the pair label and sanity-check it before trusting it.
+          PRICE=$(printf '%s' "$HTML" \
+            | tr -d '\n' \
+            | grep -oP 'XAU[/\-]?USD[^0-9]{0,40}\K[0-9][0-9,]*\.[0-9]+' \
+            | head -1 | tr -d ',')
+
+          if [ -z "${PRICE:-}" ]; then
+            echo "no price matched — page markup may have changed; not committing"
+            exit 78
+          fi
+
+          # A silently wrong number is worse than a gap. Gold outside this band
+          # means the selector grabbed something else.
+          if ! awk -v p="$PRICE" 'BEGIN { exit !(p > 500 && p < 20000) }'; then
+            echo "price $PRICE outside the plausible band — not committing"
+            exit 78
+          fi
+
+          mkdir -p data
+          if [ ! -f data/xauusd_samples.csv ]; then
+            echo "ts_utc,price,source" > data/xauusd_samples.csv
+          fi
+          echo "$TS,$PRICE,bearpaws.io" >> data/xauusd_samples.csv
+
+          # Keep the file bounded: header plus ~10 days of 15-minute samples.
+          if [ "$(wc -l < data/xauusd_samples.csv)" -gt 1000 ]; then
+            { head -1 data/xauusd_samples.csv; tail -n 960 data/xauusd_samples.csv; } > /tmp/t.csv
+            mv /tmp/t.csv data/xauusd_samples.csv
+          fi
+
+          echo "appended $TS,$PRICE"
+
+      - name: Commit
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- data/xauusd_samples.csv; then
+            echo "nothing changed"; exit 0
+          fi
+          git config user.name  "bearpaws-sampler"
+          git config user.email "sampler@users.noreply.github.com"
+          git add data/xauusd_samples.csv
+          git commit -m "sample: xauusd $(date -u +%Y-%m-%dT%H:%MZ)"
+          # Another sample may have landed while this one ran.
+          for i in 1 2 3; do
+            git pull --rebase --quiet && git push --quiet && exit 0
+            sleep $((i * 5))
+          done
+          echo "push failed after retries"; exit 1
