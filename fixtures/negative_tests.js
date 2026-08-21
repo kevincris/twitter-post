@@ -97,6 +97,10 @@ const CASES = [
     r.tweet.char_count = [...r.tweet.text].length;
   }],
   ['13 wrong render dimensions', 13, (r) => r, null, null, true],
+  ['24 morning_map cites an Asia range', 24, (r) => r],
+  ['24 morning_map cites a range in prose only', 24, (r) => {
+    r.claims = r.claims.filter((c) => !/asia/i.test(c.assertion));
+  }],
 ];
 
 let passed = 0, failed = 0;

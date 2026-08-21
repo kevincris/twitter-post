@@ -795,6 +795,32 @@ async function main() {
     }
   }
 
+  /* 24 — morning_map carries no session range.
+   * It is written 30 minutes into the Asia window, so any range it cites is
+   * either three samples long or sixteen hours stale. Both read to a follower
+   * as "the Asia range", which is the false label this account cannot afford. */
+  {
+    const r = rule(24, 'morning_map cites no session range');
+    if (rec.slot !== 'morning_map') r.skip('not a morning_map');
+    else {
+      const problems = [];
+      const ranged = (rec.claims || []).filter((c) => {
+        const src = claimSource(c) || {};
+        return src.sampled === true || /(?:asia|asian|session|overnight|tokyo)\s*rang(?:e|ed|es|ing)/i.test(c.assertion || '');
+      });
+      if (ranged.length) problems.push(`${ranged.length} range claim(s): ${ranged.map((c) => c.assertion).join('; ')}`);
+      /* "ranged", "ranges", "range" — and the same for the overnight phrasing.
+       * A word-boundary match on "range" alone lets "Asia ranged 3,414 to
+       * 3,399" through, which is the most natural way to write the thing. */
+      if (/\b(?:asia|asian|overnight|tokyo)\b[^.]{0,40}\brang(?:e|ed|es|ing)\b/i.test(joined)
+          || /\brang(?:e|ed|es|ing)\b[^.]{0,40}\b(?:asia|asian|overnight|tokyo)\b/i.test(joined)) {
+        problems.push('the text refers to an Asia or overnight range');
+      }
+      if (problems.length) r.fail(`${problems.join(' | ')} — at 23:30 UTC the window is 30 minutes old; the range belongs to london_open`);
+      else r.pass();
+    }
+  }
+
   /* 23 — sampled figures are disclosed as sampled */
   {
     const r = rule(23, 'sampled figures disclose their sampling');

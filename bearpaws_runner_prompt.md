@@ -130,7 +130,17 @@ Violating any of these means you must return `post: false` with `skip_reason: "p
 
 ### Slot-specific guidance
 
-**`morning_map`** — Lead with the level that matters most today, not a session summary. Name the calendar risk with its UTC time. Two to four sentences, closing on the day's scenario map: the two levels that decide the session. This post is preparation, so it is the safest and should be the most consistent.
+**`morning_map`** — A preview, written before the session it previews. It fires at
+23:30 UTC, thirty minutes after Tokyo opens, so **it carries no session range**: the
+Asia window has barely begun and the last completed one ended sixteen hours earlier.
+Do not cite an Asia range here, current or prior — that belongs to `london_open`,
+where the window is closed and complete.
+
+Build the map from figures that exist at 23:30 UTC: prior day high, low and close;
+the weekly open; ATR20; and the calendar ahead with UTC times. Lead with the level
+that matters most today, not a session summary. Two to four sentences, closing on
+the day's scenario map: the two levels that decide the session. This post is
+preparation, so it is the safest and should be the most consistent.
 
 **`london_open`** — Only worth posting if something resolved. Did the Asia high break or hold? Reference the morning_map claim explicitly so the timeline reads as a continuous thread of accountability. End with the map into London: what the Asia resolution leaves in play on each side.
 
