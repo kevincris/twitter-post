@@ -234,7 +234,7 @@ for (const [name, wantRule, mut] of V3_CASES) {
   mut(rec);
   fs.writeFileSync('/tmp/_v3case.json', JSON.stringify(rec, null, 2));
   let out = '';
-  try { out = execFileSync('node', ['tools/validator/validate.js', '--record', '/tmp/_v3case.json', '--repo', '.', '--json'], { encoding: 'utf8' }); }
+  try { out = execFileSync('node', ['tools/validator/validate.js', '--record', '/tmp/_v3case.json', '--repo', '.', '--allow-fixture-data', '--json'], { encoding: 'utf8' }); }
   catch (e) { out = e.stdout || ''; }
   let hit = false, msg = '';
   try {
@@ -270,7 +270,7 @@ for (const [name, wantRule, mut] of SAMPLED_CASES) {
   mut(rec);
   fs.writeFileSync('/tmp/_scase.json', JSON.stringify(rec, null, 2));
   let out = '';
-  try { out = execFileSync('node', ['tools/validator/validate.js', '--record', '/tmp/_scase.json', '--repo', '.', '--json'], { encoding: 'utf8' }); }
+  try { out = execFileSync('node', ['tools/validator/validate.js', '--record', '/tmp/_scase.json', '--repo', '.', '--allow-fixture-data', '--json'], { encoding: 'utf8' }); }
   catch (e) { out = e.stdout || ''; }
   let hit = false, msg = '';
   try {

@@ -290,6 +290,7 @@ async function main() {
   const repo = path.resolve(arg('--repo', '.'));
   const asJSON = argv.includes('--json');
   const verifySources = argv.includes('--verify-sources');
+  const allowFixtureData = argv.includes('--allow-fixture-data');
 
   if (!recordPath) {
     console.error('usage: validate.js --record <file> [--payload <file>] [--repo .] [--verify-sources] [--json]');
@@ -393,6 +394,12 @@ async function main() {
          * 32 delayed snapshots is not a session high and low, and publishing it
          * as one is a false label on a checkable number. */
         if (src.sampled) {
+          /* Test data must never live in the sampler's output. Synthetic rows
+           * committed to data/ would be traceable, arithmetically sound, and
+           * completely fake — laundering that every other rule would pass. */
+          if (/^fixtures\//.test(src.derived_from || '') && !allowFixtureData) {
+            bad.push(`${tag}: sampled source reads from fixtures/ — that is test data, not the sampler's log`);
+          }
           if (!src.window || !src.window.from || !src.window.to) bad.push(`${tag}: sampled source needs window {from, to} in UTC`);
           if (!Number.isFinite(src.n)) bad.push(`${tag}: sampled source needs n, the sample count`);
           else if (Array.isArray(src.inputs) && src.n !== src.inputs.length) {

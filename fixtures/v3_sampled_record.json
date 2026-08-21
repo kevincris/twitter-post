@@ -108,7 +108,7 @@
           3385.18,
           3384.36
         ],
-        "derived_from": "data/xauusd_samples.csv",
+        "derived_from": "fixtures/xauusd_samples.csv",
         "sampled": true,
         "n": 32,
         "window": {
@@ -157,7 +157,7 @@
           3385.18,
           3384.36
         ],
-        "derived_from": "data/xauusd_samples.csv",
+        "derived_from": "fixtures/xauusd_samples.csv",
         "sampled": true,
         "n": 32,
         "window": {
