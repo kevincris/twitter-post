@@ -26,9 +26,24 @@ jobs:
           set -euo pipefail
           TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-          HTML=$(curl -sS --fail --max-time 25 \
-                   -H 'user-agent: bearpaws-sampler' \
-                   https://bearpaws.io) || { echo "fetch failed"; exit 78; }
+          # Retry a transient blip before giving up; a single failed fetch
+          # should not punch a hole in the log.
+          HTML=""
+          for attempt in 1 2 3; do
+            if HTML=$(curl -sS --fail --max-time 25 \
+                        -H 'user-agent: bearpaws-sampler' \
+                        https://bearpaws.io); then
+              break
+            fi
+            echo "fetch attempt $attempt failed"
+            HTML=""
+            sleep $((attempt * 5))
+          done
+
+          if [ -z "$HTML" ]; then
+            echo "::error::bearpaws.io unreachable after 3 attempts — no sample written"
+            exit 1
+          fi
 
           # The homepage renders "XAU/USD<price><change%>". Take the first
           # number after the pair label and sanity-check it before trusting it.
@@ -38,15 +53,15 @@ jobs:
             | head -1 | tr -d ',')
 
           if [ -z "${PRICE:-}" ]; then
-            echo "no price matched — page markup may have changed; not committing"
-            exit 78
+            echo "::error::no price matched — page markup changed; the selector needs updating"
+            exit 1
           fi
 
           # A silently wrong number is worse than a gap. Gold outside this band
           # means the selector grabbed something else.
           if ! awk -v p="$PRICE" 'BEGIN { exit !(p > 500 && p < 20000) }'; then
-            echo "price $PRICE outside the plausible band — not committing"
-            exit 78
+            echo "::error::price $PRICE outside the plausible band — selector likely grabbed the wrong number"
+            exit 1
           fi
 
           mkdir -p data
