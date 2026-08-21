@@ -93,6 +93,21 @@ const NAMED_COLORS = [
 const SOURCE_KINDS = ['payload', 'web', 'computed'];
 const COMPUTE = {
   mean: (xs) => xs.reduce((a, b) => a + b, 0) / xs.length,
+  /* atr: inputs are raw bars, not pre-computed true ranges. Accepting TRs
+   * would mean trusting twenty numbers nobody can trace; accepting bars lets
+   * the validator recompute the ranges AND check each bar against a snapshot. */
+  atr: (xs, src) => {
+    const bars = src.bars || [];
+    let prev = src.prev_close;
+    const trs = [];
+    for (const b of bars) {
+      const hl = b.high - b.low;
+      const tr = Number.isFinite(prev) ? Math.max(hl, Math.abs(b.high - prev), Math.abs(b.low - prev)) : hl;
+      trs.push(tr);
+      prev = b.close;
+    }
+    return trs.length ? trs.reduce((a, b) => a + b, 0) / trs.length : NaN;
+  },
   sum: (xs) => xs.reduce((a, b) => a + b, 0),
   subtract: (xs) => xs.reduce((a, b) => a - b),
   min: (xs) => Math.min(...xs),
@@ -361,9 +376,18 @@ async function main() {
         if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(src.retrieved_at || '')) bad.push(`${tag}: web source needs retrieved_at as ISO 8601 Z`);
       } else {
         if (!COMPUTE[src.method]) bad.push(`${tag}: computed source needs method in ${Object.keys(COMPUTE).join('|')}`);
-        if (!Array.isArray(src.inputs) || !src.inputs.length || src.inputs.some((x) => typeof x !== 'number')) {
+        if (src.method === 'atr') {
+          if (!Array.isArray(src.bars) || src.bars.length < 2 || src.bars.some((b) => !b || ![b.high, b.low, b.close].every(Number.isFinite))) {
+            bad.push(`${tag}: atr needs bars[] of {high, low, close}, not pre-computed true ranges`);
+          }
+        } else if (!Array.isArray(src.inputs) || !src.inputs.length || src.inputs.some((x) => typeof x !== 'number')) {
           bad.push(`${tag}: computed source needs a non-empty numeric inputs[]`);
         }
+        /* Inputs must be traceable or `computed` becomes a laundering channel:
+         * any number at all can be produced by naming an arithmetic that
+         * yields it, and the validator would confirm the arithmetic while
+         * knowing nothing about where the operands came from. */
+        if (!src.derived_from) bad.push(`${tag}: computed source needs derived_from — a snapshot its inputs can be traced to`);
       }
     }
     if (!claims.length) r.fail('claims[] is empty but the post carries numerals');
@@ -403,7 +427,7 @@ async function main() {
         }
 
       } else if (src.kind === 'computed') {
-        const got = COMPUTE[src.method](src.inputs);
+        const got = COMPUTE[src.method](src.inputs, src);
         if (!Number.isFinite(got) || Math.abs(got - c.value) > FLOAT_TOL) {
           bad.push(`${tag}: ${src.method} of ${src.inputs.length} inputs is ${Number(got).toFixed(4)}, claimed ${c.value}`);
         }
@@ -690,28 +714,51 @@ async function main() {
    * faithful copy of the live page, but it does prove the writer did not
    * invent a quote after the fact, which is the failure that matters. */
   {
-    const r = rule(21, 'web quotes verify against snapshots');
+    const r = rule(21, 'quotes and operands trace to snapshots');
     const webClaims = (rec.claims || []).filter((c) => (claimSource(c) || {}).kind === 'web');
-    if (!webClaims.length) r.skip('no web-sourced claims');
+    const compClaims = (rec.claims || []).filter((c) => (claimSource(c) || {}).kind === 'computed');
+    if (!webClaims.length && !compClaims.length) r.skip('no web or computed claims');
     else {
       const bad = [];
       const snaps = new Map();
+      const loadSnap = (rel, tag) => {
+        if (!rel) { bad.push(`${tag}: no snapshot path`); return undefined; }
+        const abs = path.resolve(repo, rel);
+        if (!abs.startsWith(path.resolve(repo))) { bad.push(`${tag}: snapshot path escapes the repo`); return undefined; }
+        if (!snaps.has(abs)) snaps.set(abs, fs.existsSync(abs) ? flatten(fs.readFileSync(abs, 'utf8')) : null);
+        const body = snaps.get(abs);
+        if (body === null) { bad.push(`${tag}: snapshot missing at ${rel}`); return undefined; }
+        return body;
+      };
+
+      /* Every operand of a computed claim must be findable in the snapshot it
+       * was derived from. Without this the arithmetic checks out and the
+       * numbers underneath it are whatever the writer typed. */
+      for (const c of compClaims) {
+        const src = claimSource(c);
+        const tag = c.assertion || String(c.value);
+        const body = loadSnap(src.derived_from, tag);
+        if (body === undefined) continue;
+        const operands = src.method === 'atr'
+          ? (src.bars || []).flatMap((b) => [b.high, b.low, b.close])
+          : (src.inputs || []);
+        const missing = operands.filter((n) => !valueInQuote(n, body));
+        if (missing.length) {
+          bad.push(`${tag}: ${missing.length}/${operands.length} operands absent from ${src.derived_from} (${missing.slice(0, 4).join(', ')}${missing.length > 4 ? ', …' : ''}) — the arithmetic is right but the inputs are untraceable`);
+        }
+      }
       for (const c of webClaims) {
         const src = claimSource(c);
         const tag = c.assertion || String(c.value);
-        if (!src.snapshot) { bad.push(`${tag}: no snapshot path`); continue; }
-        const abs = path.resolve(repo, src.snapshot);
-        if (!path.resolve(abs).startsWith(path.resolve(repo))) { bad.push(`${tag}: snapshot path escapes the repo`); continue; }
-        if (!snaps.has(abs)) snaps.set(abs, fs.existsSync(abs) ? flatten(fs.readFileSync(abs, 'utf8')) : null);
-        const body = snaps.get(abs);
-        if (body === null) { bad.push(`${tag}: snapshot missing at ${src.snapshot}`); continue; }
+        const body = loadSnap(src.snapshot, tag);
+        if (body === undefined) continue;
         if (!body.includes(flatten(src.quoted_text))) {
           const stillThere = valueInQuote(c.value, body);
           bad.push(`${tag}: quote absent from its own snapshot${stillThere ? ' (value is present — the quote was reworded, restate it verbatim)' : ' and so is the value — this number is unsourced'}`);
         }
       }
       if (bad.length) r.fail(bad.join(' | '));
-      else r.pass(`${webClaims.length} quote(s) confirmed against ${snaps.size} snapshot(s)`);
+      else r.pass(`${webClaims.length} quote(s) and ${compClaims.length} computed claim(s) traced to ${snaps.size} snapshot(s)`);
     }
   }
 

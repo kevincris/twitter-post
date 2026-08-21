@@ -217,6 +217,16 @@ const V3_CASES = [
   ['21 quote absent from the snapshot', 21, (r) => { r.claims[0].source.quoted_text = 'gold surged, says Reuters'; }],
   ['21 snapshot file does not exist', 21, (r) => { r.claims[0].source.snapshot = 'snapshots/nope.txt'; }],
   ['21 snapshot path escapes the repo', 21, (r) => { r.claims[0].source.snapshot = '../../../etc/passwd'; }],
+  ['3  computed source with no derived_from', 3, (r) => { delete r.claims[2].source.derived_from; }],
+  ['3  atr given pre-computed true ranges', 3, (r) => {
+    r.claims[2].source = { kind: 'atr', method: 'atr', inputs: [90.97, 200.21], derived_from: r.claims[2].source.derived_from };
+    r.claims[2].source.kind = 'computed';
+  }],
+  ['21 computed operands absent from the snapshot', 21, (r) => { r.claims[2].source.inputs = [11.1, 22.2, 33.3]; r.claims[2].value = 22.2; }],
+  ['21 arithmetic laundering — sum of constants', 21, (r) => {
+    r.claims.push({ assertion: 'release hour 13 UTC', value: 13,
+      source: { kind: 'computed', method: 'sum', inputs: [1, 12], derived_from: r.claims[2].source.derived_from } });
+  }],
 ];
 
 for (const [name, wantRule, mut] of V3_CASES) {

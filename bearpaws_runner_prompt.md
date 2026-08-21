@@ -253,7 +253,25 @@ Rules for web sources, all enforced:
 - **Direction lives in words, not signs.** Write "down 0.67%" and claim `0.67` against a `-0.67%` quote. The validator matches magnitude and flags the sign separately, so getting the direction word wrong is caught rather than hidden.
 - **`retrieved_at` is when you read it.** A price read more than two hours before publishing gets flagged; prices go stale and an unstamped level is a liability.
 
-`computed` exists so that derived figures stay checkable. ATR20, a session range, a midpoint — publish the method and the inputs and the validator recomputes it. Never publish a derived number as if it were quoted.
+`computed` exists so that derived figures stay checkable, and it carries the same
+burden of proof as a quote:
+
+- **`derived_from` is required** — a snapshot path. Every operand must be findable
+  in it. Without this, `computed` launders arbitrary numbers: any value can be
+  produced by naming an arithmetic that yields it, and the validator would confirm
+  the arithmetic while knowing nothing about where the operands came from. A claim
+  of `sum` over `[1, 12]` to assert an hour of `13` is arithmetically true and
+  evidentially worthless.
+- **ATR is computed from bars, not from true ranges.** Use `method: "atr"` with
+  `bars: [{high, low, close}, …]` and a `prev_close` anchor. Supplying twenty
+  pre-computed true ranges asks the validator to trust twenty numbers nobody can
+  trace; supplying the bars lets it recompute the ranges and check each bar
+  against the snapshot.
+- **Unit and timezone conversions are not derivations.** A release time in UTC is a
+  `web` claim quoting the source, with the source's timezone stated. Do not
+  reconstruct it arithmetically.
+
+Never publish a derived number as if it were quoted.
 
 When skipping, return `post: false`, a `skip_reason` naming the specific threshold that failed, and omit `tweet` and `card`.
 
