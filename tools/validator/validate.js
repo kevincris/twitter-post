@@ -357,6 +357,7 @@ async function main() {
       } else if (src.kind === 'web') {
         if (!/^https?:\/\//.test(src.url || '')) bad.push(`${tag}: web source needs an http(s) url`);
         if (!src.quoted_text) bad.push(`${tag}: web source needs quoted_text — a URL alone is not checkable`);
+        if (!src.snapshot) bad.push(`${tag}: web source needs a snapshot path — the validator has no network and cannot re-fetch`);
         if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(src.retrieved_at || '')) bad.push(`${tag}: web source needs retrieved_at as ISO 8601 Z`);
       } else {
         if (!COMPUTE[src.method]) bad.push(`${tag}: computed source needs method in ${Object.keys(COMPUTE).join('|')}`);
@@ -682,44 +683,35 @@ async function main() {
     if (m) r.fail(`"${m[0]}" — use a percentile instead`); else r.pass();
   }
 
-  /* 21 — source verification (network). Kevin's call: an unverifiable number
-   * does not kill the post, it routes the post to manual review. So this
-   * warns rather than fails — which means the queue review is the only thing
-   * standing between a wrong number and a card. Make the warnings loud. */
+  /* 21 — web claims verify against the snapshot the run saved.
+   * The validator has no outbound network, so re-fetching is impossible.
+   * Instead each run writes the page text it actually read to snapshots/ and
+   * the quote is checked against that. This cannot prove the snapshot is a
+   * faithful copy of the live page, but it does prove the writer did not
+   * invent a quote after the fact, which is the failure that matters. */
   {
-    const r = rule(21, 'web sources verify');
+    const r = rule(21, 'web quotes verify against snapshots');
     const webClaims = (rec.claims || []).filter((c) => (claimSource(c) || {}).kind === 'web');
     if (!webClaims.length) r.skip('no web-sourced claims');
-    else if (!verifySources) r.skip(`${webClaims.length} web claim(s) unchecked — pass --verify-sources to re-fetch`);
     else {
-      const unverified = [];
-      const pages = new Map();
-      let fetched = 0, unreachable = 0;
+      const bad = [];
+      const snaps = new Map();
       for (const c of webClaims) {
         const src = claimSource(c);
-        if (!pages.has(src.url)) pages.set(src.url, await fetchText(src.url));
-        const body = pages.get(src.url);
         const tag = c.assertion || String(c.value);
-        if (body === null) { unreachable++; unverified.push(`${tag}: could not fetch ${src.url}`); continue; }
-        fetched++;
-        const hay = flatten(body);
-        const needle = flatten(src.quoted_text);
-        if (!hay.includes(needle)) {
-          /* The quote may have been true and the page since moved. Fall back to
-           * asking whether the number itself is still on the page, which
-           * distinguishes "stale quote" from "invented number". */
-          const stillThere = valueInQuote(c.value, hay);
-          unverified.push(`${tag}: quote not found on ${src.url}${stillThere ? ' (the value is still on the page — likely a reworded quote)' : ' AND the value is not on the page either — treat as unsourced'}`);
+        if (!src.snapshot) { bad.push(`${tag}: no snapshot path`); continue; }
+        const abs = path.resolve(repo, src.snapshot);
+        if (!path.resolve(abs).startsWith(path.resolve(repo))) { bad.push(`${tag}: snapshot path escapes the repo`); continue; }
+        if (!snaps.has(abs)) snaps.set(abs, fs.existsSync(abs) ? flatten(fs.readFileSync(abs, 'utf8')) : null);
+        const body = snaps.get(abs);
+        if (body === null) { bad.push(`${tag}: snapshot missing at ${src.snapshot}`); continue; }
+        if (!body.includes(flatten(src.quoted_text))) {
+          const stillThere = valueInQuote(c.value, body);
+          bad.push(`${tag}: quote absent from its own snapshot${stillThere ? ' (value is present — the quote was reworded, restate it verbatim)' : ' and so is the value — this number is unsourced'}`);
         }
       }
-      /* Distinguish "this environment has no egress" from "this quote is
-       * wrong". Conflating them trains the reader to ignore the rule, and a
-       * warning nobody reads is worse than no warning. */
-      if (fetched === 0 && unreachable > 0) {
-        r.skip(`source verification unavailable — no outbound network to any of ${pages.size} host(s). Every web claim in this record is unverified by machine; it rests entirely on manual review.`);
-      } else if (unverified.length) {
-        r.warn(`MANUAL REVIEW — ${unverified.length}/${webClaims.length} unverified: ${unverified.join(' | ')}`);
-      } else r.pass(`${webClaims.length} web claim(s) re-fetched and confirmed`);
+      if (bad.length) r.fail(bad.join(' | '));
+      else r.pass(`${webClaims.length} quote(s) confirmed against ${snaps.size} snapshot(s)`);
     }
   }
 

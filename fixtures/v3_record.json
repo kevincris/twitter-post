@@ -1,0 +1,83 @@
+{
+  "slot": "morning_map",
+  "post": true,
+  "skip_reason": null,
+  "tweet": {
+    "text": "4,484.21 is where gold opens the week, down 0.67% on the day. The 20-day ATR of 31.4 frames the session. Above 4,500.0 the round number is reference; below 4,450.0 the weekly open comes back into play. $XAUUSD",
+    "char_count": 209,
+    "thread": []
+  },
+  "claims": [
+    {
+      "assertion": "spot 4484.21",
+      "value": 4484.21,
+      "source": {
+        "kind": "web",
+        "url": "https://bearpaws.io",
+        "retrieved_at": "2026-08-20T15:50:00Z",
+        "quoted_text": "XAU/USD 4484.21",
+        "snapshot": "snapshots/2026-08-20_morning_map/bearpaws-io.txt"
+      }
+    },
+    {
+      "assertion": "daily change -0.67%",
+      "value": 0.67,
+      "source": {
+        "kind": "web",
+        "url": "https://bearpaws.io",
+        "retrieved_at": "2026-08-20T15:50:00Z",
+        "quoted_text": "-0.67%",
+        "snapshot": "snapshots/2026-08-20_morning_map/bearpaws-io.txt"
+      }
+    },
+    {
+      "assertion": "ATR20 31.25",
+      "value": 31.4,
+      "source": {
+        "kind": "computed",
+        "method": "mean",
+        "inputs": [
+          30,
+          32,
+          31,
+          32.5,
+          31.5
+        ]
+      }
+    },
+    {
+      "assertion": "round number 4500",
+      "value": 4500,
+      "source": {
+        "kind": "web",
+        "url": "https://bearpaws.io",
+        "retrieved_at": "2026-08-20T15:50:00Z",
+        "quoted_text": "resistance at 4500.0",
+        "snapshot": "snapshots/2026-08-20_morning_map/bearpaws-io.txt"
+      }
+    },
+    {
+      "assertion": "weekly open 4450",
+      "value": 4450,
+      "source": {
+        "kind": "web",
+        "url": "https://bearpaws.io",
+        "retrieved_at": "2026-08-20T15:50:00Z",
+        "quoted_text": "weekly open 4450.0",
+        "snapshot": "snapshots/2026-08-20_morning_map/bearpaws-io.txt"
+      }
+    }
+  ],
+  "references_prior_post_id": null,
+  "risk_flags": [],
+  "humanizer_score": 0,
+  "card": {
+    "template": "levels",
+    "layout_variant": "hero-web",
+    "html_path": "none.html",
+    "png_path": "none.png",
+    "logo_asset": "bearpaws_logo_white.svg",
+    "design_notes": "n/a"
+  },
+  "generated_at": "2026-08-20T15:52:00Z"
+}

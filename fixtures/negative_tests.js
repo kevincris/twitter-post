@@ -199,5 +199,42 @@ fs.writeFileSync(PAY, goodPay);
 fs.writeFileSync(HTML, goodHtml);
 fs.writeFileSync(PNG, goodPng);
 
+/* ---- v3: tagged claim sources -------------------------------------------
+ * Records whose numerals come from research rather than a payload. The point
+ * of the architecture is unchanged: a machine must be able to re-check every
+ * number. These assert that it still can. */
+
+const V3REC = 'fixtures/v3_record.json';
+const goodV3 = fs.readFileSync(V3REC, 'utf8');
+
+const V3_CASES = [
+  ['3  web source with no quoted_text', 3, (r) => { delete r.claims[0].source.quoted_text; }],
+  ['3  web source with no snapshot', 3, (r) => { delete r.claims[0].source.snapshot; }],
+  ['3  unknown source kind', 3, (r) => { r.claims[0].source = { kind: 'vibes' }; }],
+  ['3  computed source with no inputs', 3, (r) => { r.claims[2].source.inputs = []; }],
+  ['4  value drifts from its own quote', 4, (r) => { r.claims[0].value = 4999.99; }],
+  ['4  computed arithmetic is wrong', 4, (r) => { r.claims[2].value = 28.0; }],
+  ['21 quote absent from the snapshot', 21, (r) => { r.claims[0].source.quoted_text = 'gold surged, says Reuters'; }],
+  ['21 snapshot file does not exist', 21, (r) => { r.claims[0].source.snapshot = 'snapshots/nope.txt'; }],
+  ['21 snapshot path escapes the repo', 21, (r) => { r.claims[0].source.snapshot = '../../../etc/passwd'; }],
+];
+
+for (const [name, wantRule, mut] of V3_CASES) {
+  const rec = JSON.parse(goodV3);
+  mut(rec);
+  fs.writeFileSync('/tmp/_v3case.json', JSON.stringify(rec, null, 2));
+  let out = '';
+  try { out = execFileSync('node', ['tools/validator/validate.js', '--record', '/tmp/_v3case.json', '--repo', '.', '--json'], { encoding: 'utf8' }); }
+  catch (e) { out = e.stdout || ''; }
+  let hit = false, msg = '';
+  try {
+    const j = JSON.parse(out);
+    const f = j.results.find((x) => x.n === wantRule && x.status === 'FAIL');
+    hit = Boolean(f); msg = f ? f.message : (j.results.find((x) => x.status === 'FAIL')?.n ?? 'nothing');
+  } catch { msg = 'validator produced no JSON'; }
+  if (hit) { passed++; console.log(`  ok    ${name}  ->  rule ${wantRule} caught it`); }
+  else { failed++; console.log(`  MISS  ${name}  ->  expected rule ${wantRule}, got ${msg}`); }
+}
+
 console.log(`\n${passed} caught, ${failed} missed.`);
 process.exit(failed ? 1 : 0);
